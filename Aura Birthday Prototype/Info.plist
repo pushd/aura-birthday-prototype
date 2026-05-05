@@ -2,6 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>UIAppFonts</key>
+	<array>
+		<string>TTCommonsPro-Rg.ttf</string>
+		<string>TTCommonsPro-Md.ttf</string>
+		<string>TTCommonsPro-Bd.ttf</string>
+		<string>TTCommonsPro-XBd.ttf</string>
+		<string>TTCommonsPro-Blk.ttf</string>
+		<string>TTCommonsPro-Db.ttf</string>
+		<string>TTCommonsPro-Lt.ttf</string>
+		<string>TTCommonsPro-XLt.ttf</string>
+		<string>TTCommonsPro-Thin.ttf</string>
+		<string>TTCommonsPro-It.ttf</string>
+		<string>TTCommonsPro-BdIt.ttf</string>
+		<string>TTCommonsPro-BlkIt.ttf</string>
+		<string>TTCommonsPro-DbIt.ttf</string>
+		<string>TTCommonsPro-LtIt.ttf</string>
+		<string>TTCommonsPro-MdIt.ttf</string>
+		<string>TTCommonsPro-ThinIt.ttf</string>
+		<string>TTCommonsPro-XBdIt.ttf</string>
+		<string>TTCommonsPro-XLtIt.ttf</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
