@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import AVKit
 import PhotosUI
 
 // MARK: - Data
@@ -70,6 +69,34 @@ private struct InviteCardFrameKey: PreferenceKey {
     }
 }
 
+// MARK: - Title Style
+
+enum TitleStyle: String, CaseIterable {
+    case clean, script, fancy, wide
+
+    var label: String {
+        switch self {
+        case .clean:  return "Clean"
+        case .script: return "Script"
+        case .fancy:  return "Fancy"
+        case .wide:   return "Wide"
+        }
+    }
+
+    var sampleText: String { self == .wide ? "AA" : "Aa" }
+
+    func font(size: CGFloat) -> Font {
+        switch self {
+        case .clean:  return .system(size: size, weight: .bold, design: .default)
+        case .script: return .custom("Georgia-BoldItalic", size: size)
+        case .fancy:  return .custom("SnellRoundhand-Bold", size: size)
+        case .wide:   return .system(size: size * 0.88, weight: .black, design: .default)
+        }
+    }
+
+    var tracking: Double { self == .wide ? 3.0 : 0 }
+}
+
 // MARK: - Editor
 
 struct EditorView: View {
@@ -81,13 +108,11 @@ struct EditorView: View {
     @State private var topInset: CGFloat = 52
     @State private var drawerExpanded = false
     @State private var isVideoFullScreen = false
-    @State private var isMuted = true
     @State private var isSelectingPhotos = false
     // Live drag offset while the user is actively pulling the handle
     @State private var drawerDrag: CGFloat = 0
 
-    @State private var heroPlayer: AVQueuePlayer = AVQueuePlayer()
-    @State private var heroLooper: AVPlayerLooper?
+    @State private var slideshowIndex: Int = 0
 
     @State private var selectedPrompt: PromptItem?
     @State private var showInviteSheet = false
@@ -99,6 +124,20 @@ struct EditorView: View {
     @State private var showClearPhotosConfirmation = false
     @State private var addPickerItems: [PhotosPickerItem] = []
     @State private var melissaInvited = false
+
+    // Title editor
+    @State private var titleText: String = "Happy Birthday, Kayla"
+    @State private var titleStyle: TitleStyle = .script
+    @State private var titleColorIndex: Int = 0
+    @State private var showTitleEditor = false
+
+    static let titlePalette: [Color] = [
+        Color.white,
+        Color(white: 0.08),
+        Color(red: 0.90, green: 0.20, blue: 0.52),
+        Color(red: 0.92, green: 0.65, blue: 0.08),
+        Color(red: 0.12, green: 0.40, blue: 0.92),
+    ]
     @AppStorage("protoHorizontalCards") private var horizontalCards = false
     @State private var showTutorial = true
     @State private var tutorialStep: Int = 1
@@ -148,7 +187,14 @@ struct EditorView: View {
                 // The drawer panel sits above it in the ZStack so thumbnails
                 // are never obscured by the scrim gradient.
                 ZStack(alignment: .bottomLeading) {
-                    FillVideoPlayer(player: heroPlayer)
+                    ZStack {
+                        slideshowFrame(for: slideshowIndex)
+                            .id(slideshowIndex)
+                            .transition(.opacity)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .animation(.easeInOut(duration: 0.6), value: slideshowIndex)
 
                     LinearGradient(
                         stops: [
@@ -199,6 +245,8 @@ struct EditorView: View {
                                     PromptCard(title: item.cardTitle, imageName: item.imageName, isCompact: drawerExpanded, isHorizontal: horizontalCards)
                                         .onTapGesture { selectedPrompt = item }
                                 }
+                                TitleCardView(title: titleText, style: titleStyle, color: EditorView.titlePalette[titleColorIndex], isCompact: drawerExpanded, isHorizontal: horizontalCards)
+                                    .onTapGesture { showTitleEditor = true }
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
@@ -384,18 +432,8 @@ struct EditorView: View {
 
                     Spacer()
 
-                    // Right: sound toggle (full-screen) or ... menu + Done (normal)
-                    if isVideoFullScreen {
-                        Button {
-                            isMuted.toggle()
-                            heroPlayer.isMuted = isMuted
-                        } label: {
-                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                .font(.system(size: 15, weight: .medium))
-                                .padding(10)
-                        }
-                        .buttonStyle(.glass)
-                    } else {
+                    // Right: ... menu + Done (normal only; nothing shown in full-screen)
+                    if !isVideoFullScreen {
                         HStack(spacing: 8) {
                             Button {
                                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -576,6 +614,20 @@ struct EditorView: View {
                 .presentationDetents([.custom(InviteSheetDetent.self)])
                 .presentationBackground(Color(.systemBackground))
         }
+        .sheet(isPresented: $showTitleEditor) {
+            TitleEditorSheet(
+                initialText: titleText,
+                initialStyle: titleStyle,
+                initialColorIndex: titleColorIndex,
+                palette: EditorView.titlePalette
+            ) { style, colorIndex, text in
+                titleStyle = style
+                titleColorIndex = colorIndex
+                titleText = text
+            }
+            .presentationDetents([.large])
+            .presentationBackground(Color(.systemBackground))
+        }
         .onChange(of: addPickerItems) { _, newItems in
             Task {
                 var images: [UIImage] = []
@@ -605,23 +657,70 @@ struct EditorView: View {
         } message: {
             Text("This will remove all photos from the slideshow and can't be undone.")
         }
-        .onChange(of: drawerExpanded) { _, expanded in
-            if expanded {
-                heroPlayer.pause()
-            } else {
-                heroPlayer.play()
+        .onChange(of: photos.count) { _, newCount in
+            let maxIndex = newCount + 1 // 0=title, 1...count=photos, count+1=endcard
+            if slideshowIndex > maxIndex {
+                slideshowIndex = 0
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                let total = photos.count + 2
+                slideshowIndex = (slideshowIndex + 1) % max(1, total)
             }
         }
         .onAppear {
             if let window = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first {
                 topInset = window.safeAreaInsets.top
             }
-            if let url = Bundle.main.url(forResource: "birthday-message-original", withExtension: "mov") {
-                let item = AVPlayerItem(url: url)
-                heroLooper = AVPlayerLooper(player: heroPlayer, templateItem: item)
+        }
+    }
+
+    @ViewBuilder
+    private func slideshowFrame(for index: Int) -> some View {
+        if photos.isEmpty {
+            Color(.systemGray5)
+        } else if index == 0 {
+            // Title card: first photo fills as background (intentional crop), title overlay on top
+            Image(uiImage: photos[0].image)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .overlay(Color.black.opacity(0.30))
+                .overlay {
+                    // Using overlay (not ZStack) so Text gets a concrete proposed width
+                    // from the Image's frame, which forces proper line wrapping.
+                    Text(titleText)
+                        .font(titleStyle.font(size: 36))
+                        .tracking(titleStyle.tracking)
+                        .foregroundStyle(EditorView.titlePalette[titleColorIndex])
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 40)
+                        .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
+                }
+        } else if index <= photos.count {
+            // Individual photo frame: fit horizontally, black background for letterbox areas
+            ZStack {
+                Color.black
+                Image(uiImage: photos[index - 1].image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            heroPlayer.isMuted = isMuted
-            heroPlayer.play()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            // End card — auto-appended, not user-editable
+            ZStack {
+                Color(red: 156/255.0, green: 209/255.0, blue: 239/255.0)
+                Text("AURA")
+                    .font(.system(size: 40, weight: .black, design: .default))
+                    .foregroundStyle(.white)
+                    .tracking(10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -666,38 +765,6 @@ struct EditorView: View {
                     }
                 }
             }
-    }
-}
-
-// MARK: - Fill Video Player
-
-private struct FillVideoPlayer: UIViewRepresentable {
-    let player: AVPlayer
-
-    func makeUIView(context: Context) -> PlayerView {
-        let view = PlayerView()
-        view.player = player
-        return view
-    }
-
-    func updateUIView(_ uiView: PlayerView, context: Context) {
-        uiView.player = player
-    }
-
-    class PlayerView: UIView {
-        var player: AVPlayer? {
-            get { playerLayer.player }
-            set { playerLayer.player = newValue }
-        }
-
-        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
-
-        override class var layerClass: AnyClass { AVPlayerLayer.self }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            playerLayer.videoGravity = .resizeAspectFill
-        }
     }
 }
 
@@ -1053,6 +1120,264 @@ private struct InviteSheetView: View {
 
             Spacer()
         }
+    }
+}
+
+// MARK: - Title Card
+
+private struct TitleCardView: View {
+    let title: String
+    let style: TitleStyle
+    let color: Color
+    var isCompact: Bool = false
+    var isHorizontal: Bool = false
+
+    var body: some View {
+        if isHorizontal {
+            HStack(spacing: 10) {
+                Text(style.sampleText)
+                    .font(style.font(size: 22))
+                    .tracking(style.tracking)
+                    .foregroundStyle(color)
+                    .frame(width: 44, height: 44)
+                Text("Update Title")
+                    .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(width: 180)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
+        } else {
+            VStack(spacing: 0) {
+                if !isCompact {
+                    Text(title)
+                        .font(style.font(size: 15))
+                        .tracking(style.tracking)
+                        .foregroundStyle(color)
+                        .shadow(color: .black.opacity(0.18), radius: 2, x: 0, y: 1)
+                        .multilineTextAlignment(.center)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(3)
+                        .padding(.horizontal, 8)
+                        .frame(width: 105, height: 108, alignment: .center)
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
+                Text("Update Title")
+                    .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+                    .padding(.top, isCompact ? 12 : 8)
+                    .padding(.bottom, 12)
+            }
+            .frame(width: 105)
+            .animation(.spring(response: 0.38, dampingFraction: 0.85), value: isCompact)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
+        }
+    }
+}
+
+// MARK: - Title Editor Sheet
+
+private struct TitleEditorSheet: View {
+    let initialStyle: TitleStyle
+    let initialColorIndex: Int
+    let palette: [Color]
+    let onSave: (TitleStyle, Int, String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draftText: String
+    @State private var draftStyle: TitleStyle
+    @State private var draftColorIndex: Int
+
+    private enum Tab { case style, color, text }
+    @State private var activeTab: Tab = .style
+    @FocusState private var textFieldFocused: Bool
+
+    init(initialText: String, initialStyle: TitleStyle, initialColorIndex: Int, palette: [Color], onSave: @escaping (TitleStyle, Int, String) -> Void) {
+        self.initialStyle = initialStyle
+        self.initialColorIndex = initialColorIndex
+        self.palette = palette
+        self.onSave = onSave
+        self._draftText = State(initialValue: initialText)
+        self._draftStyle = State(initialValue: initialStyle)
+        self._draftColorIndex = State(initialValue: initialColorIndex)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            ZStack {
+                Text("Update Video Title")
+                    .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)
+
+                HStack {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
+                    .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button("Save") {
+                        onSave(draftStyle, draftColorIndex, draftText)
+                        dismiss()
+                    }
+                    .font(.custom("TTCommonsPro-Db", size: 16, relativeTo: .callout))
+                    .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+
+            Divider()
+
+            // Live preview
+            ZStack {
+                Color(.secondarySystemBackground)
+                Text(draftText.isEmpty ? " " : draftText)
+                    .font(draftStyle.font(size: 38))
+                    .tracking(draftStyle.tracking)
+                    .foregroundStyle(palette[draftColorIndex])
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.75), value: draftStyle)
+                    .animation(.easeInOut(duration: 0.18), value: draftColorIndex)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 240)
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.18)) { activeTab = .text }
+            }
+
+            // Tab switcher
+            HStack(spacing: 4) {
+                tabButton(.style, label: "Style")
+                tabButton(.color, label: "Color")
+                tabButton(.text,  label: "Text")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 14)
+
+            Divider()
+
+            // Content
+            Group {
+                switch activeTab {
+                case .style: styleSection
+                case .color: colorSection
+                case .text:  textSection
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 24)
+
+            Spacer()
+        }
+        .onChange(of: activeTab) { _, tab in
+            textFieldFocused = (tab == .text)
+        }
+    }
+
+    @ViewBuilder
+    private func tabButton(_ tab: Tab, label: String) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) { activeTab = tab }
+        } label: {
+            Text(label)
+                .font(.custom("TTCommonsPro-Md", size: 15, relativeTo: .subheadline))
+                .foregroundStyle(activeTab == tab ? .primary : .secondary)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(activeTab == tab ? Color(.secondarySystemFill) : .clear,
+                            in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var styleSection: some View {
+        HStack(spacing: 8) {
+            ForEach(TitleStyle.allCases, id: \.self) { style in
+                styleOption(style)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func styleOption(_ style: TitleStyle) -> some View {
+        let isSelected = draftStyle == style
+        Button {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                draftStyle = style
+            }
+        } label: {
+            VStack(spacing: 6) {
+                Text(style.sampleText)
+                    .font(style.font(size: 26))
+                    .tracking(style.tracking)
+                    .foregroundStyle(.primary)
+                    .frame(height: 36)
+                Text(style.label)
+                    .font(.custom("TTCommonsPro-Rg", size: 12, relativeTo: .caption2))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(isSelected ? Color(.secondarySystemFill) : .clear,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var colorSection: some View {
+        HStack(spacing: 0) {
+            ForEach(palette.indices, id: \.self) { i in
+                colorSwatch(index: i)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func colorSwatch(index: Int) -> some View {
+        let isSelected = draftColorIndex == index
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                draftColorIndex = index
+            }
+        } label: {
+            Circle()
+                .fill(palette[index])
+                .frame(width: 44, height: 44)
+                .overlay(Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1))
+                .padding(3)
+                .background(isSelected ? Color.primary.opacity(0.85) : Color.clear, in: Circle())
+                .scaleEffect(isSelected ? 1.08 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var textSection: some View {
+        TextField("Enter title...", text: $draftText, axis: .vertical)
+            .font(.custom("TTCommonsPro-Rg", size: 18, relativeTo: .body))
+            .lineLimit(1...3)
+            .padding(16)
+            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .focused($textFieldFocused)
     }
 }
 

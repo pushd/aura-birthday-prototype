@@ -242,6 +242,7 @@ struct ContentView: View {
 
                     Button {
                         guard !isButtonLoading && !isTransitioning else { return }
+                        placeholderPlayer.pause()
                         withAnimation(.easeInOut(duration: 0.15)) {
                             isTransitioning = true
                         }
