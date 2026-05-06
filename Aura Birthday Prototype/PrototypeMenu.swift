@@ -42,6 +42,7 @@ struct ShakeDetector: UIViewRepresentable {
 struct PrototypeMenuView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("protoHorizontalCards") private var horizontalCards = false
+    @AppStorage("protoVideoBlurEnabled") private var videoBlurEnabled = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,6 +67,22 @@ struct PrototypeMenuView: View {
                             .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
                             .foregroundStyle(.primary)
                         Text("Prompt & invite cells with text to the right")
+                            .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+
+                Divider()
+                    .padding(.leading, 20)
+
+                Toggle(isOn: $videoBlurEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Video blur gate")
+                            .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
+                            .foregroundStyle(.primary)
+                        Text("Blur the preview video after 12s to prompt action")
                             .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
                             .foregroundStyle(.secondary)
                     }

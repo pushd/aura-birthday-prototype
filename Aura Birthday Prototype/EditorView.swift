@@ -43,7 +43,9 @@ private struct PhotoDropDelegate: DropDelegate {
     @Binding var draggedPhoto: Photo?
 
     func performDrop(info: DropInfo) -> Bool {
-        draggedPhoto = nil
+        withAnimation(.none) {
+            draggedPhoto = nil
+        }
         return true
     }
 
@@ -95,6 +97,7 @@ struct EditorView: View {
     }
     @State private var draggedPhoto: Photo?
     @State private var showClearPhotosConfirmation = false
+    @State private var addPickerItems: [PhotosPickerItem] = []
     @State private var melissaInvited = false
     @AppStorage("protoHorizontalCards") private var horizontalCards = false
     @State private var showTutorial = true
@@ -232,23 +235,33 @@ struct EditorView: View {
                             Spacer()
 
                             if drawerExpanded {
-                                Menu {
-                                    Button {
-                                        isSelectingPhotos = true
-                                    } label: {
-                                        Label("Remove Photos", systemImage: "photo.on.rectangle")
+                                HStack(spacing: 8) {
+                                    PhotosPicker(selection: $addPickerItems, maxSelectionCount: 20, matching: .images) {
+                                        Text("Add Photos")
+                                            .font(.custom("TTCommonsPro-Db", size: 12, relativeTo: .caption))
+                                            .foregroundStyle(.black)
+                                            .padding(.horizontal, 10)
+                                            .frame(height: 30)
+                                            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                                     }
-                                    Button(role: .destructive) {
-                                        showClearPhotosConfirmation = true
+                                    Menu {
+                                        Button {
+                                            isSelectingPhotos = true
+                                        } label: {
+                                            Label("Remove Photos", systemImage: "photo.on.rectangle")
+                                        }
+                                        Button(role: .destructive) {
+                                            showClearPhotosConfirmation = true
+                                        } label: {
+                                            Label("Clear All Photos", systemImage: "trash")
+                                        }
                                     } label: {
-                                        Label("Clear All Photos", systemImage: "trash")
+                                        Image(systemName: "ellipsis")
+                                            .font(.system(size: 17, weight: .medium))
+                                            .foregroundStyle(.black)
+                                            .padding(12)
+                                            .contentShape(Rectangle())
                                     }
-                                } label: {
-                                    Image(systemName: "ellipsis")
-                                        .font(.system(size: 17, weight: .medium))
-                                        .foregroundStyle(.black)
-                                        .padding(12)
-                                        .contentShape(Rectangle())
                                 }
                             } else {
                                 Button { showInviteSheet = true } label: {
@@ -317,7 +330,9 @@ struct EditorView: View {
                             .padding(.bottom, 40)
                             .onDrop(of: [.text], isTargeted: nil) { _ in
                                 // Fallback: clears stuck drag state for drops that land in gaps
-                                draggedPhoto = nil
+                                withAnimation(.none) {
+                                    draggedPhoto = nil
+                                }
                                 return true
                             }
                         }
@@ -493,13 +508,13 @@ struct EditorView: View {
                         VStack(spacing: 20) {
                             Group {
                                 if tutorialStep == 1 {
-                                    Text("Finish Kayla's gift!")
+                                    Text("Welcome to Kayla's group video!")
                                         .transition(.opacity)
                                 } else if tutorialStep == 2 {
-                                    Text("Invite members to add more memories")
+                                    Text("You can invite other members from the frame to add more memories.")
                                         .transition(.opacity)
                                 } else {
-                                    Text("Add photos to make Kayla's gift extra special")
+                                    Text("Start by adding more photos to make Kayla's gift extra special!")
                                         .transition(.opacity)
                                 }
                             }
@@ -527,7 +542,7 @@ struct EditorView: View {
                                     .background(Color.white.opacity(0.2), in: Capsule())
                             }
                         }
-                        .offset(y: -geo.size.height * 0.10)
+                        .offset(y: -geo.size.height * 0.05)
                     }
                     .transition(.opacity)
                 }
@@ -557,9 +572,28 @@ struct EditorView: View {
             .presentationBackground(Color(.systemBackground))
         }
         .sheet(isPresented: $showInviteSheet) {
-            InviteSheetView()
+            InviteSheetView(melissaInvited: $melissaInvited)
                 .presentationDetents([.custom(InviteSheetDetent.self)])
                 .presentationBackground(Color(.systemBackground))
+        }
+        .onChange(of: addPickerItems) { _, newItems in
+            Task {
+                var images: [UIImage] = []
+                for item in newItems {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        images.append(image)
+                    }
+                }
+                await MainActor.run {
+                    if !images.isEmpty {
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                            photos.append(contentsOf: images.map { Photo(image: $0) })
+                        }
+                    }
+                    addPickerItems = []
+                }
+            }
         }
         .confirmationDialog("Clear all photos?", isPresented: $showClearPhotosConfirmation, titleVisibility: .visible) {
             Button("Clear All Photos", role: .destructive) {
@@ -771,19 +805,19 @@ private struct ContributorCard: View {
         return UIImage(contentsOfFile: path)
     }
 
-    private var inviteBadge: some View {
+    private func inviteBadge(size: CGFloat = 26) -> some View {
         ZStack {
             Circle()
                 .fill(Color(red: 0.18, green: 0.65, blue: 0.38).opacity(bloomOpacity))
-                .frame(width: 26, height: 26)
+                .frame(width: size, height: size)
                 .scaleEffect(bloomScale)
                 .allowsHitTesting(false)
             Circle()
                 .fill(isInvited.wrappedValue ? Color(red: 0.18, green: 0.65, blue: 0.38) : Color(red: 0.18, green: 0.53, blue: 0.98))
-                .frame(width: 26, height: 26)
+                .frame(width: size, height: size)
                 .overlay(
                     Image(systemName: isInvited.wrappedValue ? "checkmark" : "plus")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: size * 12 / 26, weight: .bold))
                         .foregroundStyle(.white)
                 )
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isInvited.wrappedValue)
@@ -816,6 +850,10 @@ private struct ContributorCard: View {
                 }
                 .frame(width: 40, height: 40)
                 .clipShape(Circle())
+                .overlay(alignment: .topTrailing) {
+                    inviteBadge(size: 13)
+                        .offset(x: 3, y: -3)
+                }
 
                 Group {
                     if isInvited.wrappedValue {
@@ -837,8 +875,6 @@ private struct ContributorCard: View {
                 }
 
                 Spacer()
-
-                inviteBadge
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -866,7 +902,7 @@ private struct ContributorCard: View {
                     .frame(width: 82, height: 82)
                     .clipShape(Circle())
                     .overlay(alignment: .topTrailing) {
-                        inviteBadge
+                        inviteBadge()
                             .offset(x: 6, y: -6)
                     }
                     .padding(.top, 14)
@@ -985,11 +1021,8 @@ private struct PromptSheetView: View {
 // MARK: - Invite Sheet
 
 private struct InviteSheetView: View {
-    private let contributors: [(name: String, avatarName: String)] = [
-        ("Melissa", "avatar-melissa"),
-        ("Alexander", ""),
-    ]
-    @State private var invited = [false, false]
+    var melissaInvited: Binding<Bool>
+    @State private var alexanderInvited = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1010,9 +1043,8 @@ private struct InviteSheetView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(contributors.indices, id: \.self) { i in
-                        ContributorCard(name: contributors[i].name, avatarName: contributors[i].avatarName, isInvited: $invited[i])
-                    }
+                    ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isInvited: melissaInvited)
+                    ContributorCard(name: "Alexander", avatarName: "", isInvited: $alexanderInvited)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)

@@ -10,17 +10,34 @@ import SwiftData
 import AVKit
 
 struct ContentView: View {
-    // Feature flag — set to false to disable the blur-gate treatment
-    private static let videoBlurPromptEnabled = false
+    @AppStorage("protoVideoBlurEnabled") private var videoBlurPromptEnabled = false
 
-    private let columnSpacing: CGFloat = 12
+    private let columnSpacing: CGFloat = 10
     private let horizontalPadding: CGFloat = 16
     private let cornerRadius: CGFloat = 7
 
-    // More organic aspect ratios with variance up/down within each column
-    private let column1Ratios: [CGFloat] = [0.65, 1.0, 0.78, 0.68]
-    private let column2Ratios: [CGFloat] = [0.88, 0.68, 1.0, 0.74]
-    private let column3Ratios: [CGFloat] = [0.72, 0.95, 0.62]
+    // Actual aspect ratios derived from the bundled images (clamped to portrait–landscape range)
+    private static let column1Ratios: [CGFloat] = Self.clampedImageRatios(for: 1...4)
+    private static let column2Ratios: [CGFloat] = Self.clampedImageRatios(for: 5...8)
+    private static let column3Ratios: [CGFloat] = Self.clampedImageRatios(for: 9...11)
+
+    private static func clampedImageRatios(for range: ClosedRange<Int>) -> [CGFloat] {
+        range.map { i in
+            guard let img = UIImage(named: "bday-image-\(i)"), img.size.height > 0 else { return 0.75 }
+            return max(0.5, min(1.5, img.size.width / img.size.height))
+        }
+    }
+
+    // Pre-designed rotations: left column leans right (toward center), right column leans left.
+    // Slight exceptions in each column keep it from feeling mechanical.
+    private let column1Rotations: [Double] = [3.2, -2.0, 2.8, -1.5]
+    private let column2Rotations: [Double] = [-1.4, 1.8, -0.6, 2.1]
+    private let column3Rotations: [Double] = [-3.1, 2.4, -2.7]
+
+    // Vertical stagger — columns start at different heights for a scattered feel
+    private let column1TopPad: CGFloat = 16
+    private let column2TopPad: CGFloat = 0
+    private let column3TopPad: CGFloat = 28
 
     // Per-card animation state. Scale starts near 1 so fade is primary; offset gives the float.
     // Index mapping: col1 = 0–3, col2 = 4–7, col3 = 8–10
@@ -75,49 +92,61 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Scroll grid + placeholder share this space so centering is correct
             ZStack {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        HStack(alignment: .top, spacing: columnSpacing) {
-                            // Column 1
-                            VStack(spacing: columnSpacing) {
-                                ForEach(column1Ratios.indices, id: \.self) { i in
-                                    PhotoSkeletonCard(aspectRatio: column1Ratios[i], cornerRadius: cornerRadius)
-                                        .scaleEffect(cardScales[i])
-                                        .opacity(cardOpacities[i])
-                                        .offset(y: cardOffsets[i])
+                GeometryReader { geo in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            HStack(alignment: .top, spacing: columnSpacing) {
+                                // Column 1
+                                VStack(spacing: columnSpacing) {
+                                    ForEach(Self.column1Ratios.indices, id: \.self) { i in
+                                        PhotoSkeletonCard(aspectRatio: Self.column1Ratios[i], cornerRadius: cornerRadius, imageName: "bday-image-\(i + 1)")
+                                            .scaleEffect(cardScales[i])
+                                            .opacity(cardOpacities[i])
+                                            .offset(y: cardOffsets[i])
+                                            .rotationEffect(.degrees(column1Rotations[i]))
+                                    }
                                 }
-                            }
-                            .frame(maxWidth: .infinity)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, column1TopPad)
 
-                            // Column 2
-                            VStack(spacing: columnSpacing) {
-                                ForEach(column2Ratios.indices, id: \.self) { i in
-                                    let idx = 4 + i
-                                    PhotoSkeletonCard(aspectRatio: column2Ratios[i], cornerRadius: cornerRadius)
-                                        .scaleEffect(cardScales[idx])
-                                        .opacity(cardOpacities[idx])
-                                        .offset(y: cardOffsets[idx])
+                                // Column 2
+                                VStack(spacing: columnSpacing) {
+                                    ForEach(Self.column2Ratios.indices, id: \.self) { i in
+                                        let idx = 4 + i
+                                        PhotoSkeletonCard(aspectRatio: Self.column2Ratios[i], cornerRadius: cornerRadius, imageName: "bday-image-\(i + 5)")
+                                            .scaleEffect(cardScales[idx])
+                                            .opacity(cardOpacities[idx])
+                                            .offset(y: cardOffsets[idx])
+                                            .rotationEffect(.degrees(column2Rotations[i]))
+                                    }
                                 }
-                            }
-                            .frame(maxWidth: .infinity)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, column2TopPad)
 
-                            // Column 3
-                            VStack(spacing: columnSpacing) {
-                                ForEach(column3Ratios.indices, id: \.self) { i in
-                                    let idx = 8 + i
-                                    PhotoSkeletonCard(aspectRatio: column3Ratios[i], cornerRadius: cornerRadius)
-                                        .scaleEffect(cardScales[idx])
-                                        .opacity(cardOpacities[idx])
-                                        .offset(y: cardOffsets[idx])
+                                // Column 3
+                                VStack(spacing: columnSpacing) {
+                                    ForEach(Self.column3Ratios.indices, id: \.self) { i in
+                                        let idx = 8 + i
+                                        PhotoSkeletonCard(aspectRatio: Self.column3Ratios[i], cornerRadius: cornerRadius, imageName: "bday-image-\(i + 9)")
+                                            .scaleEffect(cardScales[idx])
+                                            .opacity(cardOpacities[idx])
+                                            .offset(y: cardOffsets[idx])
+                                            .rotationEffect(.degrees(column3Rotations[i]))
+                                    }
                                 }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, column3TopPad)
                             }
-                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, horizontalPadding)
+                            .padding(.vertical, 24)
+                            Spacer(minLength: 0)
                         }
-                        .padding(.horizontal, horizontalPadding)
-                        .padding(.top, 24)
-                        .padding(.bottom, 24)
+                        .frame(minHeight: geo.size.height)
                     }
+                    .scrollClipDisabled()
                 }
+                .clipped()
 
                 // Emerged single video placeholder
                 if placeholderVisible && !showEditor {
@@ -129,9 +158,9 @@ struct ContentView: View {
                                     .stroke(Color.black.opacity(0.06))
                             )
                             .frame(width: 280, height: 280 * 16 / 9)
-                            .blur(radius: Self.videoBlurPromptEnabled && videoBlurVisible ? 20 : 0)
+                            .blur(radius: videoBlurPromptEnabled && videoBlurVisible ? 20 : 0)
 
-                        if Self.videoBlurPromptEnabled && videoBlurVisible {
+                        if videoBlurPromptEnabled && videoBlurVisible {
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .fill(Color.black.opacity(0.15))
                                 .frame(width: 280, height: 280 * 16 / 9)
@@ -182,7 +211,7 @@ struct ContentView: View {
                             placeholderPlayer.play()
                         }
                         // Blur gate: after 6s blur the video and show the prompt
-                        if Self.videoBlurPromptEnabled {
+                        if videoBlurPromptEnabled {
                             let id = animationID
                             DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) {
                                 guard animationID == id else { return }
@@ -217,13 +246,13 @@ struct ContentView: View {
                             isTransitioning = true
                         }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) {
-                            withAnimation(.easeIn(duration: 0.15)) {
+                            withAnimation(.easeIn(duration: 0.2)) {
                                 whiteOutOpacity = 1.0
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                                 isTransitioning = false
                                 showEditor = true
-                                withAnimation(.easeOut(duration: 0.25).delay(0.05)) {
+                                withAnimation(.easeOut(duration: 0.3).delay(0.05)) {
                                     whiteOutOpacity = 0
                                 }
                             }
@@ -362,7 +391,7 @@ struct ContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5 + distDelays[i] * 0.6) {
                 guard animationID == id else { return }
                 withAnimation(.easeOut(duration: 0.18)) {
-                    cardScales[i] = CGFloat.random(in: 1.06...1.14)
+                    cardScales[i] = CGFloat.random(in: 1.04...1.09)
                 }
             }
         }
@@ -396,22 +425,32 @@ struct ContentView: View {
 struct PhotoSkeletonCard: View {
     var aspectRatio: CGFloat = 1.0
     var cornerRadius: CGFloat = 14
+    var imageName: String? = nil
 
     var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color(.secondarySystemFill))
-            .overlay(
+        Group {
+            if let imageName {
+                Image(imageName)
+                    .resizable()
+                    .scaledToFill()
+            } else {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.white, lineWidth: 4)
-            )
-            .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 4)
-            .aspectRatio(aspectRatio, contentMode: .fit)
-            .overlay(
-                Image(systemName: "photo")
-                    .font(.system(size: 28, weight: .regular))
-                    .foregroundStyle(.secondary)
-            )
-            .redacted(reason: .placeholder)
+                    .fill(Color(.secondarySystemFill))
+                    .overlay(
+                        Image(systemName: "photo")
+                            .font(.system(size: 28, weight: .regular))
+                            .foregroundStyle(.secondary)
+                    )
+                    .redacted(reason: .placeholder)
+            }
+        }
+        .aspectRatio(aspectRatio, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(Color.white, lineWidth: 4)
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 4)
     }
 }
 
