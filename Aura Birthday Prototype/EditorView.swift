@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AVKit
+import PhotosUI
 
 // MARK: - Data
 
@@ -25,14 +26,56 @@ private struct PromptSheetDetent: CustomPresentationDetent {
     }
 }
 
+private struct InviteSheetDetent: CustomPresentationDetent {
+    static func height(in context: Context) -> CGFloat? {
+        context.maxDetentValue * 0.5 - 80
+    }
+}
+
+private struct Photo: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
+private struct PhotoDropDelegate: DropDelegate {
+    let photo: Photo
+    @Binding var photos: [Photo]
+    @Binding var draggedPhoto: Photo?
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedPhoto = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged = draggedPhoto, dragged.id != photo.id else { return }
+        guard let from = photos.firstIndex(where: { $0.id == dragged.id }),
+              let to   = photos.firstIndex(where: { $0.id == photo.id }) else { return }
+        withAnimation(.default) {
+            photos.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+}
+
+private struct InviteCardFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Editor
 
 struct EditorView: View {
     @Binding var isPresented: Bool
     var expansionAnchor: UnitPoint
 
-    @State private var contentVisible = false
-    @State private var previewCornerRadius: CGFloat = 24
+    @State private var contentVisible = true
+    @State private var previewCornerRadius: CGFloat = 0
     @State private var topInset: CGFloat = 52
     @State private var drawerExpanded = false
     @State private var isVideoFullScreen = false
@@ -41,16 +84,22 @@ struct EditorView: View {
     // Live drag offset while the user is actively pulling the handle
     @State private var drawerDrag: CGFloat = 0
 
-    @State private var heroPlayer: AVPlayer = {
-        guard let url = Bundle.main.url(forResource: "birthday-message-original", withExtension: "mov") else {
-            return AVPlayer()
-        }
-        let player = AVPlayer(url: url)
-        player.isMuted = true
-        return player
-    }()
+    @State private var heroPlayer: AVQueuePlayer = AVQueuePlayer()
+    @State private var heroLooper: AVPlayerLooper?
 
     @State private var selectedPrompt: PromptItem?
+    @State private var showInviteSheet = false
+    @State private var selectedPhotoIndex: Int?
+    @State private var photos: [Photo] = (1...15).compactMap { i in
+        UIImage(named: "bday-image-\(i)").map { Photo(image: $0) }
+    }
+    @State private var draggedPhoto: Photo?
+    @State private var showClearPhotosConfirmation = false
+    @State private var melissaInvited = false
+    @AppStorage("protoHorizontalCards") private var horizontalCards = false
+    @State private var showTutorial = true
+    @State private var tutorialStep: Int = 1
+    @State private var inviteCardFrame: CGRect = .zero
 
     private let promptItems: [PromptItem] = [
         PromptItem(
@@ -78,7 +127,7 @@ struct EditorView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let baseHeroHeight = geo.size.height * 0.70
+            let baseHeroHeight = geo.size.height * 0.85
             // Two snap positions for the drawer top edge
             let expandedY = topInset          // drawer covers everything below status bar
             let collapsedY = baseHeroHeight - 64  // overlaps video by 64pt so the mask blends in
@@ -98,6 +147,16 @@ struct EditorView: View {
                 ZStack(alignment: .bottomLeading) {
                     FillVideoPlayer(player: heroPlayer)
 
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: .clear, location: 0.5),
+                            .init(color: .black.opacity(0.25), location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .allowsHitTesting(false)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: isVideoFullScreen ? geo.size.height : baseHeroHeight)
@@ -124,9 +183,17 @@ struct EditorView: View {
                         Spacer()
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isCompact: drawerExpanded)
+                                ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isCompact: drawerExpanded, isInvited: $melissaInvited, isHorizontal: horizontalCards)
+                                    .background(
+                                        GeometryReader { proxy in
+                                            Color.clear.preference(
+                                                key: InviteCardFrameKey.self,
+                                                value: proxy.frame(in: .global)
+                                            )
+                                        }
+                                    )
                                 ForEach(promptItems) { item in
-                                    PromptCard(title: item.cardTitle, imageName: item.imageName, isCompact: drawerExpanded)
+                                    PromptCard(title: item.cardTitle, imageName: item.imageName, isCompact: drawerExpanded, isHorizontal: horizontalCards)
                                         .onTapGesture { selectedPrompt = item }
                                 }
                             }
@@ -144,67 +211,47 @@ struct EditorView: View {
                 // renders on top of the scrim. Snaps between two positions.
                 if !isVideoFullScreen {
                     VStack(spacing: 0) {
-                        // Drag handle — this is the only surface that drives the snap gesture.
-                        // Keeping it isolated avoids conflicts with the inner scroll views.
+                        // Header: drag handle + photo count row — full area drives the snap gesture
                         VStack(spacing: 0) {
                             RoundedRectangle(cornerRadius: 2.5)
                                 .fill(Color(.systemGray3))
                                 .frame(width: 36, height: 5)
                                 .padding(.top, 10)
                                 .padding(.bottom, 8)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    drawerDrag = value.translation.height
-                                }
-                                .onEnded { value in
-                                    let draggedUp   = value.translation.height < -20
-                                        || value.predictedEndTranslation.height < -60
-                                    let draggedDown = value.translation.height > 20
-                                        || value.predictedEndTranslation.height > 60
-                                    withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
-                                        drawerDrag = 0
-                                        if draggedUp { drawerExpanded = true }
-                                        if draggedDown {
-                                            if drawerExpanded {
-                                                drawerExpanded = false
-                                            } else {
-                                                isVideoFullScreen = true
-                                            }
-                                        }
-                                    }
-                                }
-                        )
 
-                        // Photo count + menu row
-                        let contributorCount = 0
-                        HStack(spacing: 8) {
-                            Text("18 photos • \(contributorCount) contributors")
+                            // Photo count + menu row
+                            let contributorCount = melissaInvited ? 1 : 0
+                            HStack(spacing: 8) {
+                            Text(contributorCount > 0
+                                ? "18 photos • \(contributorCount) contributor\(contributorCount == 1 ? "" : "s")"
+                                : "18 photos")
                                 .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
                                 .lineSpacing(4)
                                 .foregroundStyle(.primary)
 
                             Spacer()
 
-                            ZStack(alignment: .trailing) {
+                            if drawerExpanded {
                                 Menu {
                                     Button {
                                         isSelectingPhotos = true
                                     } label: {
-                                        Label("Add or remove photos", systemImage: "photo.on.rectangle")
+                                        Label("Remove Photos", systemImage: "photo.on.rectangle")
+                                    }
+                                    Button(role: .destructive) {
+                                        showClearPhotosConfirmation = true
+                                    } label: {
+                                        Label("Clear All Photos", systemImage: "trash")
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis")
                                         .font(.system(size: 17, weight: .medium))
                                         .foregroundStyle(.black)
+                                        .padding(12)
+                                        .contentShape(Rectangle())
                                 }
-                                .opacity(drawerExpanded ? 1 : 0)
-                                .allowsHitTesting(drawerExpanded)
-
-                                Button { } label: {
+                            } else {
+                                Button { showInviteSheet = true } label: {
                                     Text("Invite Friends & Family")
                                         .font(.custom("TTCommonsPro-Db", size: 12, relativeTo: .caption))
                                         .foregroundStyle(.black)
@@ -212,88 +259,82 @@ struct EditorView: View {
                                         .frame(height: 30)
                                         .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                                 }
-                                .opacity(drawerExpanded ? 0 : 1)
-                                .allowsHitTesting(!drawerExpanded)
                             }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .gesture(drawerSnapGesture(expandedY: expandedY, collapsedY: collapsedY))
 
-                        // Photo grid — alternating feature layout, scrolls vertically
+                        // Photo grid — bento layout: alternating feature rows and equal rows
                         ScrollView(.vertical, showsIndicators: false) {
                             let gap: CGFloat = 2
                             let cell = (geo.size.width - gap * 2) / 3
-                            let feature = cell * 2 + gap
 
                             VStack(spacing: gap) {
-                                // Block A: feature left
-                                HStack(spacing: gap) {
-                                    Rectangle().fill(Color(.secondarySystemFill))
-                                        .frame(width: feature, height: feature)
-                                    VStack(spacing: gap) {
-                                        Rectangle().fill(Color(.secondarySystemFill))
-                                            .frame(width: cell, height: cell)
-                                        Rectangle().fill(Color(.secondarySystemFill))
-                                            .frame(width: cell, height: cell)
-                                    }
-                                }
-                                // 3 equal
-                                HStack(spacing: gap) {
-                                    ForEach(0..<3, id: \.self) { _ in
-                                        Rectangle().fill(Color(.secondarySystemFill))
-                                            .frame(width: cell, height: cell)
-                                    }
-                                }
-                                // Block B: feature right
-                                HStack(spacing: gap) {
-                                    VStack(spacing: gap) {
-                                        Rectangle().fill(Color(.secondarySystemFill))
-                                            .frame(width: cell, height: cell)
-                                        Rectangle().fill(Color(.secondarySystemFill))
-                                            .frame(width: cell, height: cell)
-                                    }
-                                    Rectangle().fill(Color(.secondarySystemFill))
-                                        .frame(width: feature, height: feature)
-                                }
-                                // 3 equal
-                                HStack(spacing: gap) {
-                                    ForEach(0..<3, id: \.self) { _ in
-                                        Rectangle().fill(Color(.secondarySystemFill))
-                                            .frame(width: cell, height: cell)
-                                    }
-                                }
-                                // Block A: feature left
-                                HStack(spacing: gap) {
-                                    Rectangle().fill(Color(.secondarySystemFill))
-                                        .frame(width: feature, height: feature)
-                                    VStack(spacing: gap) {
-                                        Rectangle().fill(Color(.secondarySystemFill))
-                                            .frame(width: cell, height: cell)
-                                        Rectangle().fill(Color(.secondarySystemFill))
-                                            .frame(width: cell, height: cell)
+                                ForEach(0..<((photos.count + 2) / 3), id: \.self) { groupIdx in
+                                    let base = groupIdx * 3
+                                    let group = Array(photos[base..<min(base + 3, photos.count)])
+                                    let pattern = groupIdx % 4
+
+                                    if group.count == 3 && pattern == 0 {
+                                        // Feature left: large cell on left, two small on right
+                                        HStack(alignment: .top, spacing: gap) {
+                                            photoDragCell(group[0], idx: base)
+                                                .frame(width: cell * 2 + gap, height: cell * 2 + gap)
+                                            VStack(spacing: gap) {
+                                                photoDragCell(group[1], idx: base + 1)
+                                                    .frame(width: cell, height: cell)
+                                                photoDragCell(group[2], idx: base + 2)
+                                                    .frame(width: cell, height: cell)
+                                            }
+                                        }
+                                    } else if group.count == 3 && pattern == 2 {
+                                        // Feature right: two small on left, large cell on right
+                                        HStack(alignment: .top, spacing: gap) {
+                                            VStack(spacing: gap) {
+                                                photoDragCell(group[0], idx: base)
+                                                    .frame(width: cell, height: cell)
+                                                photoDragCell(group[1], idx: base + 1)
+                                                    .frame(width: cell, height: cell)
+                                            }
+                                            photoDragCell(group[2], idx: base + 2)
+                                                .frame(width: cell * 2 + gap, height: cell * 2 + gap)
+                                        }
+                                    } else {
+                                        // Equal row: three cells the same size
+                                        HStack(spacing: gap) {
+                                            ForEach(Array(group.enumerated()), id: \.element.id) { i, photo in
+                                                photoDragCell(photo, idx: base + i)
+                                                    .frame(width: cell, height: cell)
+                                            }
+                                        }
                                     }
                                 }
                             }
                             .padding(.bottom, 40)
+                            .onDrop(of: [.text], isTargeted: nil) { _ in
+                                // Fallback: clears stuck drag state for drops that land in gaps
+                                draggedPhoto = nil
+                                return true
+                            }
                         }
                         .scrollDisabled(!drawerExpanded)
+                        .overlay {
+                            if !drawerExpanded {
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .gesture(drawerSnapGesture(expandedY: expandedY, collapsedY: collapsedY))
+                            }
+                        }
                         .frame(maxHeight: .infinity)
                     }
                     // Height sized so when fully expanded it fills from expandedY to bottom
                     .frame(height: geo.size.height - expandedY)
                     .background(.regularMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .mask(
-                        VStack(spacing: 0) {
-                            LinearGradient(
-                                colors: drawerExpanded ? [.black, .black] : [.clear, .black],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: 40)
-                            Rectangle()
-                        }
-                    )
                     .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: -2)
                     .offset(y: drawerY)
                     .opacity(contentVisible ? 1 : 0)
@@ -347,8 +388,8 @@ struct EditorView: View {
                                 }
                             } label: {
                                 Text("Done")
-                                    .font(.custom("TTCommonsPro-Md", size: 15, relativeTo: .subheadline))
-                                    .padding(.horizontal, 18)
+                                    .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .body))
+                                    .padding(.horizontal, 8)
                                     .padding(.vertical, 8)
                             }
                             .buttonStyle(.glass)
@@ -359,13 +400,176 @@ struct EditorView: View {
                 .padding(.top, topInset + 8)
                 .opacity(contentVisible && !drawerExpanded ? 1 : 0)
                 .allowsHitTesting(contentVisible && !drawerExpanded)
+
+                // Lightbox — shown when a photo cell is tapped
+                if let idx = selectedPhotoIndex {
+                    ZStack {
+                        Color.black.opacity(0.72)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                    selectedPhotoIndex = nil
+                                }
+                            }
+                        VStack(spacing: 20) {
+                            Image(uiImage: photos[idx].image)
+                                .resizable()
+                                .scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 8)
+                                .padding(.horizontal, 24)
+                                .allowsHitTesting(false)
+
+                            Button {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                    photos.remove(at: idx)
+                                    selectedPhotoIndex = nil
+                                }
+                            } label: {
+                                Text("Remove from slideshow")
+                                    .font(.custom("TTCommonsPro-Md", size: 15, relativeTo: .subheadline))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color.white.opacity(0.15), in: Capsule())
+                            }
+                        }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 30)
+                            .onEnded { value in
+                                if value.translation.height > 60 {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                        selectedPhotoIndex = nil
+                                    }
+                                }
+                            }
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.93)))
+                }
+
+                // Tutorial overlay — three steps
+                if showTutorial && contentVisible {
+                    ZStack {
+                        Color.black.opacity(0.72)
+                            .ignoresSafeArea()
+
+                        // Step 2: Invite card
+                        if tutorialStep == 2 {
+                            VStack(spacing: 0) {
+                                Spacer()
+                                HStack(spacing: 0) {
+                                    ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isCompact: false, isHorizontal: horizontalCards)
+                                        .padding(.leading, 16)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 12)
+                            }
+                            .frame(height: baseHeroHeight - 64)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                        }
+
+                        // Step 3: "Add some photos" prompt card, offset past the contributor card
+                        if tutorialStep == 3 {
+                            let cardOffset: CGFloat = horizontalCards ? 208 : 133
+                            VStack(spacing: 0) {
+                                Spacer()
+                                HStack(spacing: 0) {
+                                    Spacer().frame(width: cardOffset)
+                                    PromptCard(title: "Add some\nphotos!", imageName: "prompt-photo-art", isHorizontal: horizontalCards)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 12)
+                            }
+                            .frame(height: baseHeroHeight - 64)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                        }
+
+                        // Text + button — fixed at -10% for all steps, content cross-fades
+                        VStack(spacing: 20) {
+                            Group {
+                                if tutorialStep == 1 {
+                                    Text("Finish Kayla's gift!")
+                                        .transition(.opacity)
+                                } else if tutorialStep == 2 {
+                                    Text("Invite members to add more memories")
+                                        .transition(.opacity)
+                                } else {
+                                    Text("Add photos to make Kayla's gift extra special")
+                                        .transition(.opacity)
+                                }
+                            }
+                            .font(.custom("TTCommonsPro-Bd", size: 20, relativeTo: .title3))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+
+                            Button {
+                                if tutorialStep < 3 {
+                                    withAnimation(.easeInOut(duration: 0.35)) {
+                                        tutorialStep += 1
+                                    }
+                                } else {
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        showTutorial = false
+                                    }
+                                }
+                            } label: {
+                                Text(tutorialStep < 3 ? "Next" : "Got it")
+                                    .font(.custom("TTCommonsPro-Db", size: 17, relativeTo: .body))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 28)
+                                    .padding(.vertical, 12)
+                                    .background(Color.white.opacity(0.2), in: Capsule())
+                            }
+                        }
+                        .offset(y: -geo.size.height * 0.10)
+                    }
+                    .transition(.opacity)
+                }
             }
         }
         .ignoresSafeArea(edges: .top)
+        .overlay {
+            let sheetVisible = showInviteSheet || selectedPrompt != nil
+            Color.black
+                .opacity(sheetVisible ? 0.45 : 0)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .animation(.easeInOut(duration: 0.3), value: sheetVisible)
+        }
+        .onPreferenceChange(InviteCardFrameKey.self) { frame in
+            inviteCardFrame = frame
+        }
         .sheet(item: $selectedPrompt) { item in
-            PromptSheetView(item: item)
-                .presentationDetents([.custom(PromptSheetDetent.self)])
+            PromptSheetView(item: item) { newImages in
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                    photos.append(contentsOf: newImages.map { Photo(image: $0) })
+                    drawerExpanded = true
+                    selectedPrompt = nil
+                }
+            }
+            .presentationDetents([.medium])
+            .presentationBackground(Color(.systemBackground))
+        }
+        .sheet(isPresented: $showInviteSheet) {
+            InviteSheetView()
+                .presentationDetents([.custom(InviteSheetDetent.self)])
                 .presentationBackground(Color(.systemBackground))
+        }
+        .confirmationDialog("Clear all photos?", isPresented: $showClearPhotosConfirmation, titleVisibility: .visible) {
+            Button("Clear All Photos", role: .destructive) {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                    photos.removeAll()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will remove all photos from the slideshow and can't be undone.")
         }
         .onChange(of: drawerExpanded) { _, expanded in
             if expanded {
@@ -378,23 +582,56 @@ struct EditorView: View {
             if let window = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first {
                 topInset = window.safeAreaInsets.top
             }
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
-                previewCornerRadius = 0
+            if let url = Bundle.main.url(forResource: "birthday-message-original", withExtension: "mov") {
+                let item = AVPlayerItem(url: url)
+                heroLooper = AVPlayerLooper(player: heroPlayer, templateItem: item)
             }
-            withAnimation(.easeOut(duration: 0.3).delay(0.28)) {
-                contentVisible = true
-            }
-            heroPlayer.seek(to: .zero)
+            heroPlayer.isMuted = isMuted
             heroPlayer.play()
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: heroPlayer.currentItem,
-                queue: .main
-            ) { _ in
-                heroPlayer.seek(to: .zero)
-                heroPlayer.play()
-            }
         }
+    }
+
+    @ViewBuilder
+    private func photoDragCell(_ photo: Photo, idx: Int) -> some View {
+        PhotoGridCell(index: idx, image: photo.image, selectedIndex: $selectedPhotoIndex)
+            .opacity(draggedPhoto?.id == photo.id ? 0.4 : 1.0)
+            .onDrag {
+                draggedPhoto = photo
+                return NSItemProvider(object: photo.id.uuidString as NSString)
+            }
+            .onDrop(of: [.text], delegate: PhotoDropDelegate(
+                photo: photo,
+                photos: $photos,
+                draggedPhoto: $draggedPhoto
+            ))
+    }
+
+    private func drawerSnapGesture(expandedY: CGFloat, collapsedY: CGFloat) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                // Clamp live drag so over-shooting a snap point can't cause a jump on release
+                let base = drawerExpanded ? expandedY : collapsedY
+                let rawY = base + value.translation.height
+                let clampedY = min(max(rawY, expandedY), collapsedY)
+                drawerDrag = clampedY - base
+            }
+            .onEnded { value in
+                let draggedUp   = value.translation.height < -20
+                    || value.predictedEndTranslation.height < -60
+                let draggedDown = value.translation.height > 20
+                    || value.predictedEndTranslation.height > 60
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                    drawerDrag = 0
+                    if draggedUp { drawerExpanded = true }
+                    if draggedDown {
+                        if drawerExpanded {
+                            drawerExpanded = false
+                        } else {
+                            isVideoFullScreen = true
+                        }
+                    }
+                }
+            }
     }
 }
 
@@ -430,38 +667,88 @@ private struct FillVideoPlayer: UIViewRepresentable {
     }
 }
 
+// MARK: - Photo Grid Cell
+
+private struct PhotoGridCell: View {
+    let index: Int
+    let image: UIImage
+    @Binding var selectedIndex: Int?
+
+    var body: some View {
+        Color(.secondarySystemFill)
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
+            .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    selectedIndex = index
+                }
+            }
+    }
+}
+
 // MARK: - Prompt Card
 
 private struct PromptCard: View {
     let title: String
     let imageName: String
     var isCompact: Bool = false
+    var isHorizontal: Bool = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            if !isCompact {
+        if isHorizontal {
+            HStack(spacing: 10) {
                 Image(uiImage: UIImage(named: imageName) ?? UIImage())
                     .resizable()
                     .renderingMode(.original)
                     .scaledToFit()
-                    .frame(width: 105, height: 108)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
-            }
+                    .frame(width: 44, height: 44)
 
-            Text(title)
-                .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 8)
-                .padding(.top, isCompact ? 12 : 8)
-                .padding(.bottom, 12)
+                Text(title)
+                    .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(width: 180)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
+        } else {
+            VStack(spacing: 0) {
+                if !isCompact {
+                    Image(uiImage: UIImage(named: imageName) ?? UIImage())
+                        .resizable()
+                        .renderingMode(.original)
+                        .scaledToFit()
+                        .frame(width: 105, height: 108)
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
+
+                Text(title)
+                    .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+                    .padding(.top, isCompact ? 12 : 8)
+                    .padding(.bottom, 12)
+            }
+            .frame(width: 105)
+            .animation(.spring(response: 0.38, dampingFraction: 0.85), value: isCompact)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
         }
-        .frame(width: 105)
-        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: isCompact)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
     }
 }
 
@@ -471,57 +758,152 @@ private struct ContributorCard: View {
     let name: String
     let avatarName: String
     var isCompact: Bool = false
+    var isInvited: Binding<Bool> = .constant(false)
+    var isHorizontal: Bool = false
+
+    @State private var bloomScale: CGFloat = 1.0
+    @State private var bloomOpacity: Double = 0.0
 
     private func loadAvatar() -> UIImage? {
+        guard !avatarName.isEmpty else { return nil }
         if let img = UIImage(named: avatarName) { return img }
         guard let path = Bundle.main.path(forResource: avatarName, ofType: "jpg") else { return nil }
         return UIImage(contentsOfFile: path)
     }
 
+    private var inviteBadge: some View {
+        ZStack {
+            Circle()
+                .fill(Color(red: 0.18, green: 0.65, blue: 0.38).opacity(bloomOpacity))
+                .frame(width: 26, height: 26)
+                .scaleEffect(bloomScale)
+                .allowsHitTesting(false)
+            Circle()
+                .fill(isInvited.wrappedValue ? Color(red: 0.18, green: 0.65, blue: 0.38) : Color(red: 0.18, green: 0.53, blue: 0.98))
+                .frame(width: 26, height: 26)
+                .overlay(
+                    Image(systemName: isInvited.wrappedValue ? "checkmark" : "plus")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                )
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isInvited.wrappedValue)
+        }
+    }
+
+    private func handleTap() {
+        guard !isInvited.wrappedValue else { return }
+        bloomScale = 1.0
+        bloomOpacity = 0.55
+        withAnimation(.easeOut(duration: 0.45)) {
+            bloomScale = 2.4
+            bloomOpacity = 0
+        }
+        isInvited.wrappedValue = true
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            if !isCompact {
+        if isHorizontal {
+            HStack(spacing: 12) {
                 ZStack {
-                    Circle()
-                        .fill(Color(red: 0.612, green: 0.820, blue: 0.937))
+                    Circle().fill(Color(red: 0.612, green: 0.820, blue: 0.937))
                     if let img = loadAvatar() {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFill()
+                        Image(uiImage: img).resizable().scaledToFill()
+                    } else {
+                        Text(String(name.prefix(1)))
+                            .font(.custom("TTCommonsPro-Bd", size: 16, relativeTo: .callout))
+                            .foregroundStyle(.white)
                     }
                 }
-                .frame(width: 82, height: 82)
+                .frame(width: 40, height: 40)
                 .clipShape(Circle())
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(Color(red: 0.18, green: 0.53, blue: 0.98))
-                        .frame(width: 26, height: 26)
-                        .overlay(
-                            Image(systemName: "plus")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(.white)
-                        )
-                        .offset(x: 6, y: -6)
-                }
-                .padding(.top, 14)
-                .frame(width: 105, height: 108, alignment: .top)
-                .transition(.opacity.combined(with: .scale(scale: 0.85)))
-            }
 
-            Text("Invite \(name)\nto contribute")
-                .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+                Group {
+                    if isInvited.wrappedValue {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(name)
+                                .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                                .foregroundStyle(.primary)
+                            Text("Invited")
+                                .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("Invite \(name) to contribute")
+                            .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer()
+
+                inviteBadge
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(width: 180)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
+            .onTapGesture { handleTap() }
+        } else {
+            VStack(spacing: 0) {
+                if !isCompact {
+                    ZStack {
+                        Circle()
+                            .fill(Color(red: 0.612, green: 0.820, blue: 0.937))
+                        if let img = loadAvatar() {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Text(String(name.prefix(1)))
+                                .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: 82, height: 82)
+                    .clipShape(Circle())
+                    .overlay(alignment: .topTrailing) {
+                        inviteBadge
+                            .offset(x: 6, y: -6)
+                    }
+                    .padding(.top, 14)
+                    .frame(width: 105, height: 108, alignment: .top)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
+
+                Group {
+                    if isInvited.wrappedValue {
+                        VStack(spacing: 1) {
+                            Text(name)
+                                .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                                .foregroundStyle(.primary)
+                            Text("Invited")
+                                .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
+                                .foregroundStyle(.secondary)
+                        }
+                        .multilineTextAlignment(.center)
+                    } else {
+                        Text("Invite \(name)\nto contribute")
+                            .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .frame(height: 34, alignment: .center)
                 .padding(.horizontal, 8)
                 .padding(.top, isCompact ? 12 : 8)
                 .padding(.bottom, 12)
+            }
+            .frame(width: 105)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
+            .animation(.spring(response: 0.38, dampingFraction: 0.85), value: isCompact)
+            .onTapGesture { handleTap() }
         }
-        .frame(width: 105)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
-        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: isCompact)
     }
 }
 
@@ -529,11 +911,9 @@ private struct ContributorCard: View {
 
 private struct PromptSheetView: View {
     let item: PromptItem
+    var onPhotosAdded: ([UIImage]) -> Void = { _ in }
 
-    private let contributors: [(name: String, avatarName: String)] = [
-        ("Melissa", "avatar-melissa"),
-        ("Melissa", "avatar-melissa"),
-    ]
+    @State private var pickerItems: [PhotosPickerItem] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -559,29 +939,85 @@ private struct PromptSheetView: View {
                 .padding(.horizontal, 32)
                 .padding(.top, 10)
 
-            Button { } label: {
-                Text(item.ctaLabel)
-                    .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        Color(red: 0.22, green: 0.33, blue: 0.27),
-                        in: RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    )
+            Group {
+                if item.ctaLabel == "Add Photos" {
+                    PhotosPicker(selection: $pickerItems, maxSelectionCount: 20, matching: .images) {
+                        ctaLabel
+                    }
+                    .onChange(of: pickerItems) { _, newItems in
+                        Task {
+                            var images: [UIImage] = []
+                            for pickerItem in newItems {
+                                if let data = try? await pickerItem.loadTransferable(type: Data.self),
+                                   let image = UIImage(data: data) {
+                                    images.append(image)
+                                }
+                            }
+                            await MainActor.run {
+                                if !images.isEmpty { onPhotosAdded(images) }
+                            }
+                        }
+                    }
+                } else {
+                    Button { } label: { ctaLabel }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
 
+            Spacer()
+        }
+    }
+
+    private var ctaLabel: some View {
+        Text(item.ctaLabel)
+            .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .background(
+                Color(red: 0.22, green: 0.33, blue: 0.27),
+                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+            )
+    }
+}
+
+// MARK: - Invite Sheet
+
+private struct InviteSheetView: View {
+    private let contributors: [(name: String, avatarName: String)] = [
+        ("Melissa", "avatar-melissa"),
+        ("Alexander", ""),
+    ]
+    @State private var invited = [false, false]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("Invite Friends & Family")
+                .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+                .padding(.top, 32)
+
+            Text("Invite others to add their own photos, videos, and messages to Kayla's video gift.")
+                .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 32)
+                .padding(.top, 10)
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(contributors.indices, id: \.self) { i in
-                        ContributorCard(name: contributors[i].name, avatarName: contributors[i].avatarName)
+                        ContributorCard(name: contributors[i].name, avatarName: contributors[i].avatarName, isInvited: $invited[i])
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
+            .padding(.top, 12)
 
             Spacer()
         }

@@ -10,6 +10,9 @@ import SwiftData
 import AVKit
 
 struct ContentView: View {
+    // Feature flag — set to false to disable the blur-gate treatment
+    private static let videoBlurPromptEnabled = false
+
     private let columnSpacing: CGFloat = 12
     private let horizontalPadding: CGFloat = 16
     private let cornerRadius: CGFloat = 7
@@ -28,13 +31,22 @@ struct ContentView: View {
     // Placeholder state
     @State private var placeholderVisible = false
     @State private var placeholderScale: CGFloat = 0.05
+    @State private var videoBlurVisible = false
 
     // Confetti
     @State private var showConfetti = false
 
+    // Prototype menu
+    @State private var showPrototypeMenu = false
+
     // Editor
     @State private var showEditor = false
     @State private var cardAnchor: UnitPoint = UnitPoint(x: 0.5, y: 0.4)
+
+    // Button loading states
+    @State private var isButtonLoading = true
+    @State private var isTransitioning = false
+    @State private var whiteOutOpacity: Double = 0
 
     // Incremented on replay to invalidate in-flight async blocks
     @State private var animationID = 0
@@ -109,87 +121,136 @@ struct ContentView: View {
 
                 // Emerged single video placeholder
                 if placeholderVisible && !showEditor {
-                    VideoPlayer(player: placeholderPlayer)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .overlay(
+                    ZStack {
+                        VideoPlayer(player: placeholderPlayer)
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .stroke(Color.black.opacity(0.06))
+                            )
+                            .frame(width: 280, height: 280 * 16 / 9)
+                            .blur(radius: Self.videoBlurPromptEnabled && videoBlurVisible ? 20 : 0)
+
+                        if Self.videoBlurPromptEnabled && videoBlurVisible {
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(Color.black.opacity(0.06))
-                        )
-                        .shadow(color: Color.black.opacity(0.18), radius: 28, x: 0, y: 10)
-                        .frame(width: 280, height: 280 * 16 / 9)
-                        .scaleEffect(placeholderScale)
-                        // Capture the card's center in screen coordinates so the editor
-                        // can expand symmetrically from exactly this point
-                        .background(
-                            GeometryReader { cardGeo in
-                                Color.clear.onAppear {
-                                    let frame = cardGeo.frame(in: .global)
-                                    if let screen = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen {
-                                        cardAnchor = UnitPoint(
-                                            x: frame.midX / screen.bounds.width,
-                                            y: frame.midY / screen.bounds.height
-                                        )
-                                    }
+                                .fill(Color.black.opacity(0.15))
+                                .frame(width: 280, height: 280 * 16 / 9)
+                                .overlay(
+                                    Text("Get started to see the whole video!")
+                                        .font(.custom("TTCommonsPro-Bd", size: 18, relativeTo: .callout))
+                                        .foregroundStyle(.white)
+                                        .multilineTextAlignment(.center)
+                                        .lineSpacing(4)
+                                        .padding(.horizontal, 32)
+                                )
+                                .transition(.opacity)
+                        }
+                    }
+                    .shadow(color: Color.black.opacity(0.10), radius: 12, x: 0, y: 4)
+                    .scaleEffect(placeholderScale)
+                    .offset(y: isTransitioning ? 40 : 0)
+                    .animation(.easeOut(duration: 0.85), value: isTransitioning)
+                    .allowsHitTesting(!isTransitioning)
+                    // Capture the card's center in screen coordinates so the editor
+                    // can expand symmetrically from exactly this point
+                    .background(
+                        GeometryReader { cardGeo in
+                            Color.clear.onAppear {
+                                let frame = cardGeo.frame(in: .global)
+                                if let screen = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen {
+                                    cardAnchor = UnitPoint(
+                                        x: frame.midX / screen.bounds.width,
+                                        y: frame.midY / screen.bounds.height
+                                    )
                                 }
                             }
-                        )
-                        .onAppear {
-                            withAnimation(.spring(response: 0.6, dampingFraction: 0.48)) {
-                                placeholderScale = 1.0
-                            }
+                        }
+                    )
+                    .onAppear {
+                        withAnimation(.spring(response: 0.6, dampingFraction: 0.48)) {
+                            placeholderScale = 1.0
+                        }
+                        placeholderPlayer.seek(to: .zero)
+                        placeholderPlayer.play()
+                        // Loop
+                        NotificationCenter.default.addObserver(
+                            forName: .AVPlayerItemDidPlayToEndTime,
+                            object: placeholderPlayer.currentItem,
+                            queue: .main
+                        ) { _ in
                             placeholderPlayer.seek(to: .zero)
                             placeholderPlayer.play()
-                            // Loop
-                            NotificationCenter.default.addObserver(
-                                forName: .AVPlayerItemDidPlayToEndTime,
-                                object: placeholderPlayer.currentItem,
-                                queue: .main
-                            ) { _ in
-                                placeholderPlayer.seek(to: .zero)
-                                placeholderPlayer.play()
+                        }
+                        // Blur gate: after 6s blur the video and show the prompt
+                        if Self.videoBlurPromptEnabled {
+                            let id = animationID
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) {
+                                guard animationID == id else { return }
+                                withAnimation(.easeInOut(duration: 0.8)) {
+                                    videoBlurVisible = true
+                                }
                             }
                         }
-                        .onTapGesture {
-                            showEditor = true
-                        }
+                    }
+                    .onTapGesture {
+                        showEditor = true
+                    }
                 }
             }
-            .overlay(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.0),
-                        .init(color: .clear, location: 0.5),
-                        .init(color: .black.opacity(0.25), location: 1.0)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .allowsHitTesting(false)
-            )
+            .zIndex(1)
 
-            // Bottom panel — sits below the scroll/placeholder area
-            VStack(spacing: 12) {
-                Text("Send Kayla a group video gift")
-                    .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
-                    .multilineTextAlignment(.center)
+            // Bottom panel — both children stay in layout; opacity cross-fade avoids size jump
+            ZStack {
+                VStack(spacing: 12) {
+                    Text("Send Kayla a group video gift")
+                        .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
+                        .multilineTextAlignment(.center)
 
-                Text("Invite friends and family to add photos, videos, and messages. We'll turn it into a video and send it to them for free. \(Text("It only takes a minute!").font(.custom("TTCommonsPro-Bd", size: 16, relativeTo: .callout)))")
-                    .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
+                    Text("Invite friends and family to add photos, videos, and messages. We'll turn it into a video and send it to them for free. \(Text("It only takes a minute!").font(.custom("TTCommonsPro-Bd", size: 16, relativeTo: .callout)))")
+                        .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.center)
 
-                Button {
-                    showEditor = true
-                } label: {
-                    Text("Get started")
-                        .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
-                        .foregroundStyle(.white)
+                    Button {
+                        guard !isButtonLoading && !isTransitioning else { return }
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isTransitioning = true
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.25) {
+                            withAnimation(.easeIn(duration: 0.15)) {
+                                whiteOutOpacity = 1.0
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                isTransitioning = false
+                                showEditor = true
+                                withAnimation(.easeOut(duration: 0.25).delay(0.05)) {
+                                    whiteOutOpacity = 0
+                                }
+                            }
+                        }
+                    } label: {
+                        ZStack {
+                            Text("Get started")
+                                .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
+                                .foregroundStyle(.white)
+                                .opacity(isButtonLoading ? 0 : 1)
+                            if isButtonLoading {
+                                TypingDotsView()
+                            }
+                        }
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
                         .background(Color(red: 0.22, green: 0.33, blue: 0.27), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
+                    .padding(.top, 12)
                 }
-                .padding(.top, 12)
+                .opacity(isTransitioning ? 0 : 1)
+
+                TypingDotsView(color: Color(red: 0.22, green: 0.33, blue: 0.27))
+                    .opacity(isTransitioning ? 1 : 0)
             }
+            .animation(.easeInOut(duration: 0.3), value: isTransitioning)
+            .frame(maxWidth: .infinity)
             .padding(20)
             .padding(.bottom, 4)
             .background(
@@ -198,6 +259,12 @@ struct ContentView: View {
             )
         }
         .background(Color(.systemBackground))
+        .background(ShakeDetector { showPrototypeMenu = true })
+        .sheet(isPresented: $showPrototypeMenu) {
+            PrototypeMenuView()
+                .presentationDetents([.medium])
+                .presentationBackground(Color(.systemBackground))
+        }
         .overlay(alignment: .topTrailing) {
             Button {
                 replayAnimation()
@@ -221,18 +288,38 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
         }
+        .overlay {
+            Color.white
+                .opacity(whiteOutOpacity)
+                .ignoresSafeArea()
+                .allowsHitTesting(whiteOutOpacity > 0)
+        }
+        .onChange(of: showEditor) { _, isShowing in
+            if !isShowing {
+                isTransitioning = false
+                whiteOutOpacity = 0
+            }
+        }
         .onAppear {
             startAnimation()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    isButtonLoading = false
+                }
+            }
         }
     }
 
     private func replayAnimation() {
         animationID += 1
+        isTransitioning = false
+        whiteOutOpacity = 0
         cardScales = Array(repeating: 0.94, count: 11)
         cardOpacities = Array(repeating: 0, count: 11)
         cardOffsets = Array(repeating: 10, count: 11)
         placeholderVisible = false
         placeholderScale = 0.05
+        videoBlurVisible = false
         showConfetti = false
         cardDelays = Self.makeShuffledDelays()
         startAnimation()
@@ -296,6 +383,12 @@ struct ContentView: View {
             guard animationID == id else { return }
             placeholderVisible = true
             showConfetti = true
+        }
+
+        // Remove confetti view after pieces finish so re-renders don't replay it
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.1 + 3.5) {
+            guard animationID == id else { return }
+            showConfetti = false
         }
     }
 }
@@ -399,6 +492,36 @@ private struct ConfettiPieceView: View {
                     animate = true
                 }
             }
+    }
+}
+
+// MARK: - Typing Dots
+
+private struct TypingDotsView: View {
+    var color: Color = .white
+    @State private var activeDot: Int = -1
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { i in
+                Circle()
+                    .fill(color)
+                    .frame(width: 7, height: 7)
+                    .offset(y: activeDot == i ? -5 : 0)
+                    .animation(.easeInOut(duration: 0.35), value: activeDot)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                for i in 0..<3 {
+                    activeDot = i
+                    try? await Task.sleep(for: .seconds(0.2))
+                    if Task.isCancelled { return }
+                }
+                activeDot = -1
+                try? await Task.sleep(for: .seconds(0.4))
+            }
+        }
     }
 }
 
