@@ -59,7 +59,7 @@ private struct SlideDropDelegate: DropDelegate {
     @Binding var draggedSlide: VideoSlide?
 
     func performDrop(info: DropInfo) -> Bool {
-        withAnimation(.none) { draggedSlide = nil }
+        draggedSlide = nil
         return true
     }
 
@@ -185,21 +185,20 @@ struct EditorView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let baseHeroHeight = geo.size.height * 0.85
+            let baseHeroHeight = geo.size.height * 0.70
             let expandedY = topInset
-            let collapsedY = baseHeroHeight - 64
+            let collapsedY = baseHeroHeight - 48
 
             let rawDrawerY = (drawerExpanded ? expandedY : collapsedY) + drawerDrag
             let drawerY = min(max(rawDrawerY, expandedY), collapsedY)
 
             ZStack(alignment: .top) {
-                Color(.systemBackground)
+                Color.white
                     .ignoresSafeArea()
-                    .opacity(contentVisible ? 1 : 0)
 
                 ZStack(alignment: .bottomLeading) {
                     ZStack {
-                        slideshowFrame(for: slideshowIndex, containerWidth: geo.size.width, containerHeight: baseHeroHeight)
+                        slideshowFrame(for: slideshowIndex, containerWidth: geo.size.width, containerHeight: geo.size.height)
                             .id(slideshowIndex)
                             .transition(.opacity)
                     }
@@ -219,8 +218,22 @@ struct EditorView: View {
                     .allowsHitTesting(false)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: isVideoFullScreen ? geo.size.height : baseHeroHeight)
-                .clipShape(RoundedRectangle(cornerRadius: isVideoFullScreen ? 0 : previewCornerRadius, style: .continuous))
+                .frame(height: geo.size.height)
+                .mask {
+                    if isVideoFullScreen {
+                        Rectangle()
+                    } else {
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0.0),
+                                .init(color: .black, location: 0.62),
+                                .init(color: .clear, location: 0.82),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                }
                 .gesture(
                     DragGesture(minimumDistance: 20)
                         .onEnded { value in
@@ -236,51 +249,35 @@ struct EditorView: View {
                         }
                 )
 
+                // Scrim over slideshow when drawer is fully expanded
                 if !isVideoFullScreen {
-                    VStack(spacing: 0) {
-                        Spacer()
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isCompact: drawerExpanded, isInvited: $melissaInvited, isHorizontal: horizontalCards)
-                                    .background(
-                                        GeometryReader { proxy in
-                                            Color.clear.preference(
-                                                key: InviteCardFrameKey.self,
-                                                value: proxy.frame(in: .global)
-                                            )
-                                        }
-                                    )
-                                ForEach(promptItems) { item in
-                                    PromptCard(title: item.cardTitle, imageName: item.imageName, isCompact: drawerExpanded, isHorizontal: horizontalCards)
-                                        .onTapGesture {
-                                            if item.imageName == "prompt-message-art" {
-                                                editingMessageID = nil
-                                                showMessageEditor = true
-                                            } else {
-                                                selectedPrompt = item
-                                            }
-                                        }
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                        }
+                    Color.black
+                        .opacity(drawerExpanded ? 0.5 : 0)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: baseHeroHeight)
+                        .allowsHitTesting(false)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
+                }
+
+                // Title button above drawer
+                if !isVideoFullScreen {
+                    Button { showTitleEditor = true } label: {
+                        Text(titleText)
+                            .font(.custom("TTCommonsPro-Bd", size: 26, relativeTo: .title3))
+                            .underline()
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1)
                     }
-                    .frame(height: baseHeroHeight - 64)
-                    .frame(maxWidth: .infinity)
-                    .opacity(contentVisible ? 1 : 0)
-                    .allowsHitTesting(contentVisible)
+                    .position(x: geo.size.width / 2, y: collapsedY - 17)
+                    .opacity(contentVisible && !drawerExpanded ? 1 : 0)
+                    .allowsHitTesting(contentVisible && !drawerExpanded)
+                    .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
                 if !isVideoFullScreen {
                     VStack(spacing: 0) {
                         // Header: drag handle + slide count row
                         VStack(spacing: 0) {
-                            RoundedRectangle(cornerRadius: 2.5)
-                                .fill(Color(.systemGray3))
-                                .frame(width: 36, height: 5)
-                                .padding(.top, 10)
-                                .padding(.bottom, 8)
 
                             let photoCount = slides.reduce(0) { n, s in if case .photo = s { return n + 1 } else { return n } }
                             let msgCount   = slides.reduce(0) { n, s in if case .message = s { return n + 1 } else { return n } }
@@ -298,7 +295,7 @@ struct EditorView: View {
                                     : slideSummary)
                                     .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
                                     .lineSpacing(4)
-                                    .foregroundStyle(.primary)
+                                    .foregroundStyle(.white)
 
                                 Spacer()
 
@@ -318,27 +315,27 @@ struct EditorView: View {
                                         } label: {
                                             Image(systemName: "ellipsis")
                                                 .font(.system(size: 17, weight: .medium))
-                                                .foregroundStyle(.black)
+                                                .foregroundStyle(.white)
                                                 .padding(12)
                                                 .contentShape(Rectangle())
                                         }
                                         PhotosPicker(selection: $addPickerItems, maxSelectionCount: 20, matching: .images) {
                                             Text("Add Photos")
                                                 .font(.custom("TTCommonsPro-Db", size: 12, relativeTo: .caption))
-                                                .foregroundStyle(.black)
+                                                .foregroundStyle(.white)
                                                 .padding(.horizontal, 10)
                                                 .frame(height: 30)
-                                                .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                                .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                                         }
                                     }
                                 } else {
                                     Button { showInviteSheet = true } label: {
                                         Text("Invite Friends & Family")
                                             .font(.custom("TTCommonsPro-Db", size: 12, relativeTo: .caption))
-                                            .foregroundStyle(.black)
+                                            .foregroundStyle(.white)
                                             .padding(.horizontal, 10)
                                             .frame(height: 30)
-                                            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                            .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                                     }
                                 }
                             }
@@ -349,39 +346,81 @@ struct EditorView: View {
                         .contentShape(Rectangle())
                         .gesture(drawerSnapGesture(expandedY: expandedY, collapsedY: collapsedY))
 
+                        // Contributor + prompt cards — vertical when collapsed, horizontal when expanded
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ContributorCard(
+                                    name: "Melissa",
+                                    avatarName: "avatar-melissa",
+                                    isCompact: false,
+                                    isInvited: $melissaInvited,
+                                    isHorizontal: drawerExpanded
+                                )
+                                .background(
+                                    GeometryReader { proxy in
+                                        Color.clear.preference(
+                                            key: InviteCardFrameKey.self,
+                                            value: proxy.frame(in: .global)
+                                        )
+                                    }
+                                )
+                                .id(drawerExpanded)
+                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+
+                                ForEach(promptItems) { item in
+                                    PromptCard(
+                                        title: item.cardTitle,
+                                        imageName: item.imageName,
+                                        isCompact: false,
+                                        isHorizontal: drawerExpanded
+                                    )
+                                    .id(drawerExpanded)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                    .onTapGesture {
+                                        if item.imageName == "prompt-message-art" {
+                                            editingMessageID = nil
+                                            showMessageEditor = true
+                                        } else {
+                                            selectedPrompt = item
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                        }
+                        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
+
                         // Slide grid — bento layout: alternating feature rows and equal rows
+                        ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
                             let gap: CGFloat = 2
                             let cell = (geo.size.width - gap * 2) / 3
 
                             VStack(spacing: gap) {
-                                // Row 0: Title cell (fixed, large) + first two slides
-                                let titleSize = cell * 2 + gap
-                                HStack(alignment: .top, spacing: gap) {
-                                    TitleGridCell(
-                                        title: titleText,
-                                        style: titleStyle,
-                                        color: EditorView.titlePalette[titleColorIndex],
-                                        size: titleSize
-                                    )
-                                    .onTapGesture { showTitleEditor = true }
-
-                                    if slides.count >= 1 {
-                                        VStack(spacing: gap) {
-                                            slideDragCell(slides[0], idx: 0)
-                                                .frame(width: cell, height: cell)
-                                            if slides.count >= 2 {
+                                // Row 0: Feature cell (2×2) + two small cells stacked right
+                                let featureSize = cell * 2 + gap
+                                if slides.count >= 1 {
+                                    HStack(alignment: .top, spacing: gap) {
+                                        slideDragCell(slides[0], idx: 0)
+                                            .frame(width: featureSize, height: featureSize)
+                                        if slides.count >= 2 {
+                                            VStack(spacing: gap) {
                                                 slideDragCell(slides[1], idx: 1)
                                                     .frame(width: cell, height: cell)
+                                                if slides.count >= 3 {
+                                                    slideDragCell(slides[2], idx: 2)
+                                                        .frame(width: cell, height: cell)
+                                                }
                                             }
                                         }
                                     }
                                 }
 
-                                // Remaining slides start at index 2; pattern begins at 1 (equal row)
-                                let remaining = max(slides.count - 2, 0)
+                                // Remaining slides start at index 3; pattern begins at 1 (equal row)
+                                let remaining = max(slides.count - 3, 0)
                                 ForEach(0..<((remaining + 2) / 3), id: \.self) { groupIdx in
-                                    let base = 2 + groupIdx * 3
+                                    let base = 3 + groupIdx * 3
                                     let group = Array(slides[base..<min(base + 3, slides.count)])
                                     let pattern = (groupIdx + 1) % 4
 
@@ -413,13 +452,15 @@ struct EditorView: View {
                                                 slideDragCell(slide, idx: base + i)
                                                     .frame(width: cell, height: cell)
                                             }
+                                            Spacer(minLength: 0)
                                         }
                                     }
                                 }
+                                Color.clear.frame(height: 0).id("slideGridBottom")
                             }
                             .padding(.bottom, 40)
                             .onDrop(of: [.text], isTargeted: nil) { _ in
-                                withAnimation(.none) { draggedSlide = nil }
+                                draggedSlide = nil
                                 return true
                             }
                         }
@@ -432,9 +473,18 @@ struct EditorView: View {
                             }
                         }
                         .frame(maxHeight: .infinity)
+                        .onChange(of: slides.count) { oldCount, newCount in
+                            guard newCount > oldCount else { return }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                                withAnimation(.easeOut(duration: 0.3)) {
+                                    proxy.scrollTo("slideGridBottom", anchor: .bottom)
+                                }
+                            }
+                        }
+                        } // ScrollViewReader
                     }
                     .frame(height: geo.size.height - expandedY)
-                    .background(.regularMaterial)
+                    .background(.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: -2)
                     .offset(y: drawerY)
@@ -546,33 +596,32 @@ struct EditorView: View {
 
                         if tutorialStep == 2 {
                             VStack(spacing: 0) {
-                                Spacer()
+                                Spacer().frame(height: collapsedY + 54)
                                 HStack(spacing: 0) {
-                                    ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isCompact: false, isHorizontal: horizontalCards)
+                                    ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isCompact: false, isHorizontal: false)
                                         .padding(.leading, 16)
                                     Spacer()
                                 }
                                 .padding(.vertical, 12)
+                                Spacer()
                             }
-                            .frame(height: baseHeroHeight - 64)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .allowsHitTesting(false)
                             .transition(.opacity)
                         }
 
                         if tutorialStep == 3 {
-                            let cardOffset: CGFloat = horizontalCards ? 208 : 133
                             VStack(spacing: 0) {
-                                Spacer()
+                                Spacer().frame(height: collapsedY + 54)
                                 HStack(spacing: 0) {
-                                    Spacer().frame(width: cardOffset)
-                                    PromptCard(title: "Add some\nphotos!", imageName: "prompt-photo-art", isHorizontal: horizontalCards)
+                                    Spacer().frame(width: 133)
+                                    PromptCard(title: "Add some\nphotos!", imageName: "prompt-photo-art", isHorizontal: false)
                                     Spacer()
                                 }
                                 .padding(.vertical, 12)
+                                Spacer()
                             }
-                            .frame(height: baseHeroHeight - 64)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .allowsHitTesting(false)
                             .transition(.opacity)
                         }
@@ -760,10 +809,10 @@ struct EditorView: View {
             // End card — auto-appended, not user-editable
             ZStack {
                 Color(red: 156/255.0, green: 209/255.0, blue: 239/255.0)
-                Text("AURA")
-                    .font(.system(size: 40, weight: .black, design: .default))
-                    .foregroundStyle(.white)
-                    .tracking(10)
+                Image("aura-logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: containerWidth * 0.41)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -1253,32 +1302,6 @@ private struct InviteSheetView: View {
 
             Spacer()
         }
-    }
-}
-
-// MARK: - Title Grid Cell
-
-private struct TitleGridCell: View {
-    let title: String
-    let style: TitleStyle
-    let color: Color
-    let size: CGFloat
-
-    var body: some View {
-        ZStack {
-            Color(red: 0.08, green: 0.08, blue: 0.12)
-            VStack(spacing: 8) {
-                Text(title)
-                    .font(style.font(size: 26))
-                    .tracking(style.tracking)
-                    .foregroundStyle(color)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.7)
-                    .frame(maxWidth: size - 32)
-                    .shadow(color: .black.opacity(0.4), radius: 4, x: 0, y: 1)
-            }
-        }
-        .frame(width: size, height: size)
     }
 }
 

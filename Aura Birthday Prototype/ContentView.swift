@@ -284,8 +284,16 @@ struct ContentView: View {
             .padding(20)
             .padding(.bottom, 4)
             .background(
-                Color(.systemBackground)
-                    .ignoresSafeArea(edges: .bottom)
+                LinearGradient(
+                    stops: [
+                        .init(color: Color(.systemBackground), location: 0.0),
+                        .init(color: Color(.systemBackground), location: 0.55),
+                        .init(color: Color(.systemBackground).opacity(0), location: 1.0)
+                    ],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+                .ignoresSafeArea(edges: .bottom)
             )
         }
         .background(Color(.systemBackground))
