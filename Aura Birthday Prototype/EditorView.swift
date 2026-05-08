@@ -31,6 +31,12 @@ private struct InviteSheetDetent: CustomPresentationDetent {
     }
 }
 
+private struct TitleEditorSheetDetent: CustomPresentationDetent {
+    static func height(in context: Context) -> CGFloat? {
+        context.maxDetentValue * 0.5 + 32
+    }
+}
+
 private struct SendDateSheetDetent: CustomPresentationDetent {
     static func height(in context: Context) -> CGFloat? {
         context.maxDetentValue * 0.5 + 240
@@ -174,6 +180,8 @@ struct EditorView: View {
     @State private var tutorialStep: Int = 1
     @State private var tutorialPeekOffset: CGFloat = 0
     @State private var tutorialScrimRevealOffset: CGFloat = 0
+    @State private var titleDidAppear = false
+    @State private var isMuted = false
     @State private var inviteCardFrame: CGRect = .zero
 
     private var sendDateLabel: String {
@@ -288,109 +296,57 @@ struct EditorView: View {
                         Spacer().frame(height: 32)
                         Button { showTitleEditor = true } label: {
                             Text(titleText)
-                                .font(.custom("TTCommonsPro-Bd", size: 26, relativeTo: .title3))
+                                .font(.custom("TTCommonsPro-Bd", size: 27, relativeTo: .title3))
                                 .underline()
                                 .foregroundStyle(.white)
                                 .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1)
                                 .multilineTextAlignment(.center)
+                                .lineLimit(nil)
                         }
+                        .frame(maxWidth: geo.size.width - 64)
                         Spacer().frame(height: 24)
-                        Button { showSendDateEditor = true } label: {
-                            HStack(spacing: 8) {
-                                Text(sendDateLabel)
-                                    .font(.custom("TTCommonsPro-Md", size: 21, relativeTo: .callout))
-                                Image(systemName: "paperplane.fill")
-                                    .font(.system(size: 16, weight: .medium))
+                        HStack(spacing: 10) {
+                            Button { showSendDateEditor = true } label: {
+                                HStack(spacing: 8) {
+                                    Text(sendDateLabel)
+                                        .font(.custom("TTCommonsPro-Md", size: 21, relativeTo: .callout))
+                                    Image(systemName: "paperplane.fill")
+                                        .font(.system(size: 16, weight: .medium))
+                                }
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 9)
+                                .background(Color.white.opacity(0.40), in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.56), lineWidth: 1))
                             }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 9)
-                            .background(Color.white.opacity(0.32), in: Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.45), lineWidth: 1))
+                            Button { showInviteSheet = true } label: {
+                                Image(systemName: "person.badge.plus")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 13)
+                                    .padding(.vertical, 9)
+                                    .background(Color.white.opacity(0.40), in: Capsule())
+                                    .overlay(Capsule().stroke(Color.white.opacity(0.56), lineWidth: 1))
+                            }
                         }
                         Spacer().frame(height: 32)
                     }
-                    .position(x: geo.size.width / 2, y: collapsedY - 73 - (showTutorial && tutorialStep == 4 ? tutorialPeekOffset : 0))
-                    .opacity(contentVisible && !drawerExpanded && !(showTutorial && tutorialStep == 4) ? 1 : 0)
-                    .allowsHitTesting(contentVisible && !drawerExpanded && !(showTutorial && tutorialStep == 4))
-                    .animation(.spring(response: 0.55, dampingFraction: 0.82), value: tutorialPeekOffset)
-                    .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showTutorial && tutorialStep == 4)
+                    .position(x: geo.size.width / 2, y: collapsedY - 73)
+                    .offset(y: titleDidAppear ? 0 : -20)
+                    .opacity(contentVisible && !drawerExpanded && titleDidAppear ? 1 : 0)
+                    .allowsHitTesting(contentVisible && !drawerExpanded && titleDidAppear)
+                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: titleDidAppear)
                     .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
                 if !isVideoFullScreen {
                     VStack(spacing: 0) {
-                        // Header: drag handle + slide count row
-                        VStack(spacing: 0) {
-
-                            let photoCount = slides.reduce(0) { n, s in if case .photo = s { return n + 1 } else { return n } }
-                            let msgCount   = slides.reduce(0) { n, s in if case .message = s { return n + 1 } else { return n } }
-                            let contributorCount = melissaInvited ? 1 : 0
-                            let slideSummary: String = {
-                                var parts: [String] = []
-                                if photoCount > 0 { parts.append("\(photoCount) photo\(photoCount == 1 ? "" : "s")") }
-                                if msgCount > 0 { parts.append("\(msgCount) message\(msgCount == 1 ? "" : "s")") }
-                                return parts.isEmpty ? "No slides" : parts.joined(separator: " • ")
-                            }()
-
-                            HStack(spacing: 8) {
-                                Text(contributorCount > 0
-                                    ? "\(slideSummary) • \(contributorCount) contributor\(contributorCount == 1 ? "" : "s")"
-                                    : slideSummary)
-                                    .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
-                                    .lineSpacing(4)
-                                    .foregroundStyle(.white)
-
-                                Spacer()
-
-                                if drawerExpanded {
-                                    HStack(spacing: 8) {
-                                        Menu {
-                                            Button {
-                                                isSelectingPhotos = true
-                                            } label: {
-                                                Label("Remove Photos", systemImage: "photo.on.rectangle")
-                                            }
-                                            Button(role: .destructive) {
-                                                showClearPhotosConfirmation = true
-                                            } label: {
-                                                Label("Clear All Photos", systemImage: "trash")
-                                            }
-                                        } label: {
-                                            Image(systemName: "ellipsis")
-                                                .font(.system(size: 17, weight: .medium))
-                                                .foregroundStyle(.white)
-                                                .padding(12)
-                                                .contentShape(Rectangle())
-                                        }
-                                        PhotosPicker(selection: $addPickerItems, maxSelectionCount: 20, matching: .images) {
-                                            Text("Add Photos")
-                                                .font(.custom("TTCommonsPro-Db", size: 12, relativeTo: .caption))
-                                                .foregroundStyle(.white)
-                                                .padding(.horizontal, 10)
-                                                .frame(height: 30)
-                                                .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                                        }
-                                    }
-                                } else {
-                                    Button { showInviteSheet = true } label: {
-                                        Text("Invite Friends & Family")
-                                            .font(.custom("TTCommonsPro-Db", size: 12, relativeTo: .caption))
-                                            .foregroundStyle(.white)
-                                            .padding(.horizontal, 10)
-                                            .frame(height: 30)
-                                            .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                        .gesture(drawerSnapGesture(expandedY: expandedY, collapsedY: collapsedY))
-                        .opacity(showTutorial && tutorialStep == 4 ? 0 : 1)
-                        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showTutorial && tutorialStep == 4)
+                        // Invisible drag handle
+                        Color.clear
+                            .frame(height: 20)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                            .gesture(drawerSnapGesture(expandedY: expandedY, collapsedY: collapsedY))
 
                         // Contributor + prompt cards — vertical when collapsed, horizontal when expanded
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -542,16 +498,27 @@ struct EditorView: View {
                 // Top bar
                 HStack {
                     if isVideoFullScreen {
-                        Button {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                isVideoFullScreen = false
+                        HStack(spacing: 8) {
+                            Button {
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                    isVideoFullScreen = false
+                                }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .padding(10)
                             }
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .semibold))
-                                .padding(10)
+                            .buttonStyle(.glass)
+
+                            Button {
+                                isMuted.toggle()
+                            } label: {
+                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .padding(10)
+                            }
+                            .buttonStyle(.glass)
                         }
-                        .buttonStyle(.glass)
                     } else {
                         Button {
                             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -607,6 +574,27 @@ struct EditorView: View {
                                 .padding(.horizontal, 24)
                                 .allowsHitTesting(false)
 
+                            // Stubbed photo metadata
+                            let takenDates = ["Apr 12, 2026", "May 1, 2026", "Apr 28, 2026", "Mar 15, 2026", "May 3, 2026", "Apr 20, 2026", "May 5, 2026", "Apr 7, 2026"]
+                            let addedBy = ["you", "Melissa", "you", "Melissa", "you", "you", "Melissa", "you"]
+                            let takenDate = takenDates[idx % takenDates.count]
+                            let contributor = addedBy[idx % addedBy.count]
+
+                            HStack(spacing: 20) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "camera.fill")
+                                        .font(.system(size: 11))
+                                    Text("Taken \(takenDate)")
+                                }
+                                HStack(spacing: 6) {
+                                    Image(systemName: contributor == "you" ? "person.fill" : "person.crop.circle.fill")
+                                        .font(.system(size: 11))
+                                    Text("Added by \(contributor)")
+                                }
+                            }
+                            .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
+                            .foregroundStyle(.white.opacity(0.72))
+
                             Button {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                                     slides.remove(at: idx)
@@ -649,7 +637,7 @@ struct EditorView: View {
 
                         if tutorialStep == 2 {
                             VStack(spacing: 0) {
-                                Spacer().frame(height: collapsedY + 54)
+                                Spacer().frame(height: collapsedY + 20)
                                 HStack(spacing: 0) {
                                     ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isCompact: false, isHorizontal: false)
                                         .padding(.leading, 16)
@@ -665,7 +653,7 @@ struct EditorView: View {
 
                         if tutorialStep == 3 {
                             VStack(spacing: 0) {
-                                Spacer().frame(height: collapsedY + 54)
+                                Spacer().frame(height: collapsedY + 20)
                                 HStack(spacing: 0) {
                                     Spacer().frame(width: 133)
                                     PromptCard(title: "Add some\nphotos!", imageName: "prompt-photo-art", isHorizontal: false)
@@ -761,7 +749,7 @@ struct EditorView: View {
             TitleEditorSheet(initialText: titleText) { text in
                 titleText = text
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.custom(TitleEditorSheetDetent.self)])
             .presentationBackground(Color(.systemBackground))
         }
         .sheet(isPresented: $showSendDateEditor) {
@@ -855,6 +843,13 @@ struct EditorView: View {
                 tutorialScrimRevealOffset = 0
             }
         }
+        .onChange(of: showTutorial) { _, isShowing in
+            if !isShowing {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    titleDidAppear = true
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -945,9 +940,9 @@ struct EditorView: View {
         let screenH = UIScreen.main.bounds.height
         let collY = screenH * 0.70 - 48
         let peekAmount: CGFloat = 100
-        // drawerPreamble = drawer header row (~54) + cards scroll row (~178)
+        // drawerPreamble = invisible drag handle (20) + cards scroll row (~178)
         // Cards are faded out but still occupy space, so preamble stays at full height
-        let drawerPreamble: CGFloat = 232
+        let drawerPreamble: CGFloat = 198
         withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
             tutorialScrimRevealOffset = max(0, screenH - collY + peekAmount - drawerPreamble)
             tutorialPeekOffset = peekAmount
@@ -1616,45 +1611,43 @@ private struct MessageEditorSheet: View {
             Divider()
 
             // Card: preview and input — text typed directly, style/color reflected live
-            ScrollView {
-                ZStack {
-                    Color(red: 0.52, green: 0.61, blue: 0.74)
+            ZStack {
+                Color(red: 0.52, green: 0.61, blue: 0.74)
 
-                    if draftText.isEmpty {
-                        Text("Write your message...")
-                            .font(draftStyle.font(size: 22))
-                            .foregroundStyle(palette[draftColorIndex].opacity(0.6))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 36)
-                            .allowsHitTesting(false)
-                    }
-
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        TextEditor(text: $draftText)
-                            .font(draftStyle.font(size: 22))
-                            .foregroundStyle(palette[draftColorIndex])
-                            .multilineTextAlignment(.center)
-                            .focused($textFieldFocused)
-                            .scrollContentBackground(.hidden)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 28)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.vertical, 32)
+                if draftText.isEmpty {
+                    Text("Write your message...")
+                        .font(draftStyle.font(size: 22))
+                        .foregroundStyle(palette[draftColorIndex].opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 36)
+                        .allowsHitTesting(false)
                 }
-                .aspectRatio(9/16, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.black.opacity(0.06))
-                )
-                .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 4)
-                .padding(.horizontal, 32)
-                .padding(.top, 20)
-                .padding(.bottom, 12)
+
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    TextEditor(text: $draftText)
+                        .font(draftStyle.font(size: 22))
+                        .foregroundStyle(palette[draftColorIndex])
+                        .multilineTextAlignment(.center)
+                        .focused($textFieldFocused)
+                        .scrollContentBackground(.hidden)
+                        .frame(maxHeight: .infinity)
+                        .padding(.horizontal, 28)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 32)
             }
-            .scrollDismissesKeyboard(.interactively)
+            .aspectRatio(9/16, contentMode: .fit)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.black.opacity(0.06))
+            )
+            .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 4)
+            .padding(.horizontal, 32)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
 
             Divider()
 
@@ -1677,8 +1670,7 @@ private struct MessageEditorSheet: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 20)
-
-            Spacer()
+            .padding(.bottom, 20)
         }
         .onAppear { textFieldFocused = true }
     }
