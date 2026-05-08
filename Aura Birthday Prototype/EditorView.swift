@@ -31,6 +31,12 @@ private struct InviteSheetDetent: CustomPresentationDetent {
     }
 }
 
+private struct SendDateSheetDetent: CustomPresentationDetent {
+    static func height(in context: Context) -> CGFloat? {
+        context.maxDetentValue * 0.5 + 240
+    }
+}
+
 private struct Photo: Identifiable {
     let id = UUID()
     let image: UIImage
@@ -39,7 +45,11 @@ private struct Photo: Identifiable {
 private struct Message: Identifiable {
     var id: UUID
     var text: String
-    init(id: UUID = UUID(), text: String = "") { self.id = id; self.text = text }
+    var style: TitleStyle
+    var colorIndex: Int
+    init(id: UUID = UUID(), text: String = "", style: TitleStyle = .clean, colorIndex: Int = 0) {
+        self.id = id; self.text = text; self.style = style; self.colorIndex = colorIndex
+    }
 }
 
 private enum VideoSlide: Identifiable {
@@ -139,9 +149,14 @@ struct EditorView: View {
 
     // Title editor
     @State private var titleText: String = "Happy Birthday, Kayla"
-    @State private var titleStyle: TitleStyle = .script
-    @State private var titleColorIndex: Int = 0
     @State private var showTitleEditor = false
+
+    // Send date editor
+    @State private var sendDate: Date = {
+        var c = DateComponents(); c.year = 2026; c.month = 5; c.day = 8
+        return Calendar.current.date(from: c) ?? Date()
+    }()
+    @State private var showSendDateEditor = false
 
     // Message editor
     @State private var showMessageEditor = false
@@ -157,7 +172,15 @@ struct EditorView: View {
     @AppStorage("protoHorizontalCards") private var horizontalCards = false
     @State private var showTutorial = true
     @State private var tutorialStep: Int = 1
+    @State private var tutorialPeekOffset: CGFloat = 0
+    @State private var tutorialScrimRevealOffset: CGFloat = 0
     @State private var inviteCardFrame: CGRect = .zero
+
+    private var sendDateLabel: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f.string(from: sendDate)
+    }
 
     private let promptItems: [PromptItem] = [
         PromptItem(
@@ -259,18 +282,39 @@ struct EditorView: View {
                         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
-                // Title button above drawer
+                // Title + send date above drawer
                 if !isVideoFullScreen {
-                    Button { showTitleEditor = true } label: {
-                        Text(titleText)
-                            .font(.custom("TTCommonsPro-Bd", size: 26, relativeTo: .title3))
-                            .underline()
+                    VStack(alignment: .center, spacing: 0) {
+                        Spacer().frame(height: 32)
+                        Button { showTitleEditor = true } label: {
+                            Text(titleText)
+                                .font(.custom("TTCommonsPro-Bd", size: 26, relativeTo: .title3))
+                                .underline()
+                                .foregroundStyle(.white)
+                                .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1)
+                                .multilineTextAlignment(.center)
+                        }
+                        Spacer().frame(height: 24)
+                        Button { showSendDateEditor = true } label: {
+                            HStack(spacing: 8) {
+                                Text(sendDateLabel)
+                                    .font(.custom("TTCommonsPro-Md", size: 21, relativeTo: .callout))
+                                Image(systemName: "paperplane.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                            }
                             .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
+                            .background(Color.white.opacity(0.32), in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.45), lineWidth: 1))
+                        }
+                        Spacer().frame(height: 32)
                     }
-                    .position(x: geo.size.width / 2, y: collapsedY - 17)
-                    .opacity(contentVisible && !drawerExpanded ? 1 : 0)
-                    .allowsHitTesting(contentVisible && !drawerExpanded)
+                    .position(x: geo.size.width / 2, y: collapsedY - 73 - (showTutorial && tutorialStep == 4 ? tutorialPeekOffset : 0))
+                    .opacity(contentVisible && !drawerExpanded && !(showTutorial && tutorialStep == 4) ? 1 : 0)
+                    .allowsHitTesting(contentVisible && !drawerExpanded && !(showTutorial && tutorialStep == 4))
+                    .animation(.spring(response: 0.55, dampingFraction: 0.82), value: tutorialPeekOffset)
+                    .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showTutorial && tutorialStep == 4)
                     .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
@@ -345,6 +389,8 @@ struct EditorView: View {
                         .frame(maxWidth: .infinity)
                         .contentShape(Rectangle())
                         .gesture(drawerSnapGesture(expandedY: expandedY, collapsedY: collapsedY))
+                        .opacity(showTutorial && tutorialStep == 4 ? 0 : 1)
+                        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showTutorial && tutorialStep == 4)
 
                         // Contributor + prompt cards — vertical when collapsed, horizontal when expanded
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -389,6 +435,8 @@ struct EditorView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                         }
+                        .opacity(showTutorial && tutorialStep == 4 ? 0 : 1)
+                        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showTutorial && tutorialStep == 4)
                         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
 
                         // Slide grid — bento layout: alternating feature rows and equal rows
@@ -487,7 +535,7 @@ struct EditorView: View {
                     .background(.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: -2)
-                    .offset(y: drawerY)
+                    .offset(y: drawerY - (showTutorial && tutorialStep == 4 ? tutorialPeekOffset : 0))
                     .opacity(contentVisible ? 1 : 0)
                 }
 
@@ -590,9 +638,14 @@ struct EditorView: View {
                 // Tutorial overlay — three steps
                 if showTutorial && contentVisible {
                     ZStack {
-                        Color.black.opacity(0.72)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .ignoresSafeArea()
+                        VStack(spacing: 0) {
+                            Color.black.opacity(0.72)
+                            Color.clear
+                                .frame(height: tutorialScrimRevealOffset)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .ignoresSafeArea()
+                        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: tutorialScrimRevealOffset)
 
                         if tutorialStep == 2 {
                             VStack(spacing: 0) {
@@ -634,8 +687,11 @@ struct EditorView: View {
                                 } else if tutorialStep == 2 {
                                     Text("You can invite other members from the frame to add more memories.")
                                         .transition(.opacity)
-                                } else {
+                                } else if tutorialStep == 3 {
                                     Text("Start by adding more photos to make Kayla's gift extra special!")
+                                        .transition(.opacity)
+                                } else {
+                                    Text("View the photos we've already added. Add or remove photos and drag and drop to reorder in the slideshow.")
                                         .transition(.opacity)
                                 }
                             }
@@ -645,17 +701,19 @@ struct EditorView: View {
                             .padding(.horizontal, 40)
 
                             Button {
-                                if tutorialStep < 3 {
+                                if tutorialStep < 4 {
                                     withAnimation(.easeInOut(duration: 0.35)) {
                                         tutorialStep += 1
                                     }
                                 } else {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         showTutorial = false
+                                        tutorialPeekOffset = 0
+                                        tutorialScrimRevealOffset = 0
                                     }
                                 }
                             } label: {
-                                Text(tutorialStep < 3 ? "Next" : "Got it")
+                                Text(tutorialStep < 4 ? "Next" : "Got it")
                                     .font(.custom("TTCommonsPro-Db", size: 17, relativeTo: .body))
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 28)
@@ -700,33 +758,38 @@ struct EditorView: View {
                 .presentationBackground(Color(.systemBackground))
         }
         .sheet(isPresented: $showTitleEditor) {
-            TitleEditorSheet(
-                initialText: titleText,
-                initialStyle: titleStyle,
-                initialColorIndex: titleColorIndex,
-                palette: EditorView.titlePalette
-            ) { style, colorIndex, text in
-                titleStyle = style
-                titleColorIndex = colorIndex
+            TitleEditorSheet(initialText: titleText) { text in
                 titleText = text
             }
-            .presentationDetents([.large])
+            .presentationDetents([.medium])
+            .presentationBackground(Color(.systemBackground))
+        }
+        .sheet(isPresented: $showSendDateEditor) {
+            SendDateEditorSheet(initialDate: sendDate) { date in
+                sendDate = date
+            } onSendNow: { }
+            .presentationDetents([.custom(SendDateSheetDetent.self)])
             .presentationBackground(Color(.systemBackground))
         }
         .sheet(isPresented: $showMessageEditor, onDismiss: { editingMessageID = nil }) {
-            let initialText: String = {
+            let (initialText, initialStyle, initialColorIndex): (String, TitleStyle, Int) = {
                 guard let id = editingMessageID,
                       let slide = slides.first(where: { $0.id == id }),
-                      case .message(let m) = slide else { return "" }
-                return m.text
+                      case .message(let m) = slide else { return ("", .clean, 0) }
+                return (m.text, m.style, m.colorIndex)
             }()
-            MessageEditorSheet(initialText: initialText) { text in
+            MessageEditorSheet(
+                initialText: initialText,
+                initialStyle: initialStyle,
+                initialColorIndex: initialColorIndex,
+                palette: EditorView.titlePalette
+            ) { text, style, colorIndex in
                 if let id = editingMessageID,
                    let idx = slides.firstIndex(where: { $0.id == id }) {
-                    slides[idx] = .message(Message(id: id, text: text))
+                    slides[idx] = .message(Message(id: id, text: text, style: style, colorIndex: colorIndex))
                 } else {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
-                        slides.append(.message(Message(text: text)))
+                        slides.append(.message(Message(text: text, style: style, colorIndex: colorIndex)))
                         drawerExpanded = true
                     }
                 }
@@ -782,6 +845,14 @@ struct EditorView: View {
         .onAppear {
             if let window = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first {
                 topInset = window.safeAreaInsets.top
+            }
+        }
+        .onChange(of: tutorialStep) { _, step in
+            if step == 4 {
+                peekAndReveal()
+            } else {
+                tutorialPeekOffset = 0
+                tutorialScrimRevealOffset = 0
             }
         }
     }
@@ -869,6 +940,19 @@ struct EditorView: View {
                 }
             }
     }
+
+    private func peekAndReveal() {
+        let screenH = UIScreen.main.bounds.height
+        let collY = screenH * 0.70 - 48
+        let peekAmount: CGFloat = 100
+        // drawerPreamble = drawer header row (~54) + cards scroll row (~178)
+        // Cards are faded out but still occupy space, so preamble stays at full height
+        let drawerPreamble: CGFloat = 232
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
+            tutorialScrimRevealOffset = max(0, screenH - collY + peekAmount - drawerPreamble)
+            tutorialPeekOffset = peekAmount
+        }
+    }
 }
 
 // MARK: - Photo Grid Cell
@@ -906,8 +990,9 @@ private struct MessageGridCell: View {
         ZStack {
             Color(red: 0.52, green: 0.61, blue: 0.74)
             Text(message.text)
-                .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
-                .foregroundStyle(.white)
+                .font(message.style.font(size: 13))
+                .tracking(message.style.tracking)
+                .foregroundStyle(EditorView.titlePalette[message.colorIndex])
                 .multilineTextAlignment(.center)
                 .lineLimit(5)
                 .padding(8)
@@ -966,8 +1051,9 @@ private struct SlideshowMessageView: View {
         ZStack {
             Color(red: 0.52, green: 0.61, blue: 0.74)
             Text(message.text)
-                .font(.custom("TTCommonsPro-Rg", size: 28, relativeTo: .title2))
-                .foregroundStyle(.white)
+                .font(message.style.font(size: 28))
+                .tracking(message.style.tracking)
+                .foregroundStyle(EditorView.titlePalette[message.colorIndex])
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 48)
         }
@@ -1308,23 +1394,190 @@ private struct InviteSheetView: View {
 // MARK: - Title Editor Sheet
 
 private struct TitleEditorSheet: View {
-    let initialStyle: TitleStyle
-    let initialColorIndex: Int
+    let onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draftText: String
+    @FocusState private var textFieldFocused: Bool
+
+    init(initialText: String, onSave: @escaping (String) -> Void) {
+        self.onSave = onSave
+        self._draftText = State(initialValue: initialText)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Image(uiImage: UIImage(named: "prompt-title-art") ?? UIImage())
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(height: 160)
+                .padding(.top, 28)
+
+            Text("Edit Video Title")
+                .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+
+            TextField("Enter title...", text: $draftText, axis: .vertical)
+                .font(.custom("TTCommonsPro-Rg", size: 18, relativeTo: .body))
+                .lineLimit(1...3)
+                .padding(16)
+                .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .focused($textFieldFocused)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+
+            Button {
+                onSave(draftText)
+                dismiss()
+            } label: {
+                Text("Update")
+                    .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        Color(red: 0.22, green: 0.33, blue: 0.27),
+                        in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    )
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+
+            Spacer()
+        }
+        .onAppear { textFieldFocused = true }
+    }
+}
+
+// MARK: - Send Date Editor Sheet
+
+private struct SendDateEditorSheet: View {
+    let onConfirm: (Date) -> Void
+    let onSendNow: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draftDate: Date
+    @State private var showPicker = false
+
+    init(initialDate: Date, onConfirm: @escaping (Date) -> Void, onSendNow: @escaping () -> Void) {
+        self.onConfirm = onConfirm
+        self.onSendNow = onSendNow
+        self._draftDate = State(initialValue: initialDate)
+    }
+
+    private var formattedDate: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d, yyyy"
+        return f.string(from: draftDate)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                Image(uiImage: UIImage(named: "prompt-schedule-art") ?? UIImage())
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+                    .frame(height: 160)
+                    .padding(.top, 28)
+
+                Text("Schedule Send Date")
+                    .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 20)
+
+                // Date label
+                VStack(spacing: 4) {
+                    Text(formattedDate)
+                        .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title3))
+                        .foregroundStyle(.primary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+                .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+
+                Button {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                        showPicker.toggle()
+                    }
+                } label: {
+                    Text(showPicker ? "Hide picker" : "Change date")
+                        .font(.custom("TTCommonsPro-Db", size: 15, relativeTo: .subheadline))
+                        .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
+                        .padding(.vertical, 10)
+                }
+                .padding(.top, 4)
+
+                if showPicker {
+                    DatePicker("", selection: $draftDate, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
+                        .padding(.horizontal, 12)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                Button {
+                    onConfirm(draftDate)
+                    dismiss()
+                } label: {
+                    Text("Confirm")
+                        .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(
+                            Color(red: 0.22, green: 0.33, blue: 0.27),
+                            in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        )
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+
+                Button {
+                    onSendNow()
+                    dismiss()
+                } label: {
+                    Text("Send now")
+                        .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
+                        .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(Color(red: 0.22, green: 0.33, blue: 0.27), lineWidth: 1.5)
+                        )
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 20)
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+}
+
+// MARK: - Message Editor Sheet
+
+private struct MessageEditorSheet: View {
     let palette: [Color]
-    let onSave: (TitleStyle, Int, String) -> Void
+    let onSave: (String, TitleStyle, Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var draftText: String
     @State private var draftStyle: TitleStyle
     @State private var draftColorIndex: Int
-
-    private enum Tab { case style, color, text }
-    @State private var activeTab: Tab = .style
     @FocusState private var textFieldFocused: Bool
 
-    init(initialText: String, initialStyle: TitleStyle, initialColorIndex: Int, palette: [Color], onSave: @escaping (TitleStyle, Int, String) -> Void) {
-        self.initialStyle = initialStyle
-        self.initialColorIndex = initialColorIndex
+    private enum Tab { case style, color }
+    @State private var activeTab: Tab = .style
+
+    init(initialText: String, initialStyle: TitleStyle, initialColorIndex: Int, palette: [Color], onSave: @escaping (String, TitleStyle, Int) -> Void) {
         self.palette = palette
         self.onSave = onSave
         self._draftText = State(initialValue: initialText)
@@ -1336,26 +1589,25 @@ private struct TitleEditorSheet: View {
         VStack(spacing: 0) {
             // Header
             ZStack {
-                Text("Update Video Title")
+                Text("Write a Message")
                     .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity)
 
                 HStack {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
-                    .foregroundStyle(.secondary)
+                    Button("Cancel") { dismiss() }
+                        .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
+                        .foregroundStyle(.secondary)
 
                     Spacer()
 
                     Button("Save") {
-                        onSave(draftStyle, draftColorIndex, draftText)
+                        onSave(draftText, draftStyle, draftColorIndex)
                         dismiss()
                     }
                     .font(.custom("TTCommonsPro-Db", size: 16, relativeTo: .callout))
                     .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
+                    .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .padding(.horizontal, 20)
@@ -1363,52 +1615,72 @@ private struct TitleEditorSheet: View {
 
             Divider()
 
-            // Live preview
-            ZStack {
-                Color(.secondarySystemBackground)
-                Text(draftText.isEmpty ? " " : draftText)
-                    .font(draftStyle.font(size: 38))
-                    .tracking(draftStyle.tracking)
-                    .foregroundStyle(palette[draftColorIndex])
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.75), value: draftStyle)
-                    .animation(.easeInOut(duration: 0.18), value: draftColorIndex)
+            // Card: preview and input — text typed directly, style/color reflected live
+            ScrollView {
+                ZStack {
+                    Color(red: 0.52, green: 0.61, blue: 0.74)
+
+                    if draftText.isEmpty {
+                        Text("Write your message...")
+                            .font(draftStyle.font(size: 22))
+                            .foregroundStyle(palette[draftColorIndex].opacity(0.6))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 36)
+                            .allowsHitTesting(false)
+                    }
+
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        TextEditor(text: $draftText)
+                            .font(draftStyle.font(size: 22))
+                            .foregroundStyle(palette[draftColorIndex])
+                            .multilineTextAlignment(.center)
+                            .focused($textFieldFocused)
+                            .scrollContentBackground(.hidden)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 28)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 32)
+                }
+                .aspectRatio(9/16, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(Color.black.opacity(0.06))
+                )
+                .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 4)
+                .padding(.horizontal, 32)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 240)
-            .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.18)) { activeTab = .text }
-            }
+            .scrollDismissesKeyboard(.interactively)
+
+            Divider()
 
             // Tab switcher
             HStack(spacing: 4) {
                 tabButton(.style, label: "Style")
                 tabButton(.color, label: "Color")
-                tabButton(.text,  label: "Text")
             }
             .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 14)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
 
             Divider()
 
-            // Content
             Group {
                 switch activeTab {
                 case .style: styleSection
                 case .color: colorSection
-                case .text:  textSection
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 24)
+            .padding(.top, 20)
 
             Spacer()
         }
-        .onChange(of: activeTab) { _, tab in
-            textFieldFocused = (tab == .text)
-        }
+        .onAppear { textFieldFocused = true }
     }
 
     @ViewBuilder
@@ -1488,106 +1760,6 @@ private struct TitleEditorSheet: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
         }
         .buttonStyle(.plain)
-    }
-
-    private var textSection: some View {
-        TextField("Enter title...", text: $draftText, axis: .vertical)
-            .font(.custom("TTCommonsPro-Rg", size: 18, relativeTo: .body))
-            .lineLimit(1...3)
-            .padding(16)
-            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .focused($textFieldFocused)
-    }
-}
-
-// MARK: - Message Editor Sheet
-
-private struct MessageEditorSheet: View {
-    let onSave: (String) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var draftText: String
-    @FocusState private var textFieldFocused: Bool
-
-    init(initialText: String, onSave: @escaping (String) -> Void) {
-        self.onSave = onSave
-        self._draftText = State(initialValue: initialText)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            ZStack {
-                Text("Write a Message")
-                    .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity)
-
-                HStack {
-                    Button("Cancel") { dismiss() }
-                        .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
-
-                    Button("Save") {
-                        onSave(draftText)
-                        dismiss()
-                    }
-                    .font(.custom("TTCommonsPro-Db", size: 16, relativeTo: .callout))
-                    .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
-                    .disabled(draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-
-            Divider()
-
-            // Card: preview and input are one — same shape as the ContentView video card
-            ScrollView {
-                ZStack {
-                    Color(red: 0.52, green: 0.61, blue: 0.74)
-
-                    // Placeholder centered in the card
-                    if draftText.isEmpty {
-                        Text("Write your message...")
-                            .font(.custom("TTCommonsPro-Rg", size: 22, relativeTo: .title3))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 36)
-                            .allowsHitTesting(false)
-                    }
-
-                    // TextEditor vertically centered via flanking spacers
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        TextEditor(text: $draftText)
-                            .font(.custom("TTCommonsPro-Rg", size: 22, relativeTo: .title3))
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.center)
-                            .focused($textFieldFocused)
-                            .scrollContentBackground(.hidden)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 28)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.vertical, 32)
-                }
-                .aspectRatio(9/16, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.black.opacity(0.06))
-                )
-                .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 4)
-                .padding(.horizontal, 32)
-                .padding(.top, 24)
-                .padding(.bottom, 16)
-            }
-            .scrollDismissesKeyboard(.interactively)
-        }
-        .onAppear { textFieldFocused = true }
     }
 }
 
