@@ -152,6 +152,7 @@ struct EditorView: View {
     @State private var showClearPhotosConfirmation = false
     @State private var addPickerItems: [PhotosPickerItem] = []
     @State private var melissaInvited = false
+    @State private var alexanderInvited = false
 
     // Title editor
     @State private var titleText: String = "Happy Birthday, Kayla"
@@ -290,6 +291,24 @@ struct EditorView: View {
                         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
+                // Gradient scrim to improve legibility of title and pill buttons
+                if !isVideoFullScreen {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: .clear, location: 0.38),
+                            .init(color: .black.opacity(0.55), location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: baseHeroHeight)
+                    .allowsHitTesting(false)
+                    .opacity(drawerExpanded ? 0 : 1)
+                    .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
+                }
+
                 // Title + send date above drawer
                 if !isVideoFullScreen {
                     VStack(alignment: .center, spacing: 0) {
@@ -309,24 +328,28 @@ struct EditorView: View {
                             Button { showSendDateEditor = true } label: {
                                 HStack(spacing: 8) {
                                     Text(sendDateLabel)
-                                        .font(.custom("TTCommonsPro-Md", size: 21, relativeTo: .callout))
+                                        .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .callout))
                                     Image(systemName: "paperplane.fill")
-                                        .font(.system(size: 16, weight: .medium))
+                                        .font(.system(size: 15, weight: .medium))
                                 }
-                                .foregroundStyle(.black)
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 9)
-                                .background(Color.white.opacity(0.40), in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.56), lineWidth: 1))
+                                .background(Color.white.opacity(0.25), in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.70), lineWidth: 1))
                             }
                             Button { showInviteSheet = true } label: {
-                                Image(systemName: "person.badge.plus")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundStyle(.black)
-                                    .padding(.horizontal, 13)
-                                    .padding(.vertical, 9)
-                                    .background(Color.white.opacity(0.40), in: Capsule())
-                                    .overlay(Capsule().stroke(Color.white.opacity(0.56), lineWidth: 1))
+                                HStack(spacing: 7) {
+                                    Image(systemName: "person.badge.plus")
+                                        .font(.system(size: 15, weight: .medium))
+                                    Text("Invite")
+                                        .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .callout))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 9)
+                                .background(Color.white.opacity(0.25), in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.70), lineWidth: 1))
                             }
                         }
                         Spacer().frame(height: 32)
@@ -527,9 +550,9 @@ struct EditorView: View {
                         } label: {
                             Image(systemName: "arrow.up.left.and.arrow.down.right")
                                 .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white)
                                 .padding(10)
                         }
-                        .buttonStyle(.glass)
                     }
 
                     Spacer()
@@ -741,7 +764,7 @@ struct EditorView: View {
             .presentationBackground(Color(.systemBackground))
         }
         .sheet(isPresented: $showInviteSheet) {
-            InviteSheetView(melissaInvited: $melissaInvited)
+            InviteSheetView(melissaInvited: $melissaInvited, alexanderInvited: $alexanderInvited)
                 .presentationDetents([.custom(InviteSheetDetent.self)])
                 .presentationBackground(Color(.systemBackground))
         }
@@ -1352,7 +1375,7 @@ private struct PromptSheetView: View {
 
 private struct InviteSheetView: View {
     var melissaInvited: Binding<Bool>
-    @State private var alexanderInvited = false
+    var alexanderInvited: Binding<Bool>
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1374,7 +1397,7 @@ private struct InviteSheetView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isInvited: melissaInvited)
-                    ContributorCard(name: "Alexander", avatarName: "", isInvited: $alexanderInvited)
+                    ContributorCard(name: "Alexander", avatarName: "", isInvited: alexanderInvited)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)

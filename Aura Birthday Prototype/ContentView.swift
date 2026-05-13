@@ -573,12 +573,50 @@ private struct TypingDotsView: View {
     }
 }
 
-#Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+// MARK: - Confetti Burst Screen
+
+struct ConfettiBurstView: View {
+    @State private var showConfetti = false
+    @State private var burstID = 0
+
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            if showConfetti {
+                ConfettiView()
+                    .id(burstID)
+            }
+
+            Button {
+                burstID += 1
+                showConfetti = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    showConfetti = true
+                }
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .padding(10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.top, 8)
+            .padding(.trailing, 8)
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(2))
+            showConfetti = true
+        }
+    }
 }
 
 #Preview {
     ContentView()
         .modelContainer(for: Item.self, inMemory: true)
+}
+
+#Preview("Confetti Burst") {
+    ConfettiBurstView()
 }

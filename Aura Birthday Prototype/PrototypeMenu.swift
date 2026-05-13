@@ -43,6 +43,7 @@ struct PrototypeMenuView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("protoHorizontalCards") private var horizontalCards = false
     @AppStorage("protoVideoBlurEnabled") private var videoBlurEnabled = false
+    @State private var showConfettiBurst = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -92,10 +93,37 @@ struct PrototypeMenuView: View {
 
                 Divider()
                     .padding(.leading, 20)
+
+                Button {
+                    showConfettiBurst = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Confetti burst")
+                                .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
+                                .foregroundStyle(.primary)
+                            Text("Isolated confetti animation screen")
+                                .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+
+                Divider()
+                    .padding(.leading, 20)
             }
 
             Spacer()
         }
         .background(Color(.systemBackground))
+        .fullScreenCover(isPresented: $showConfettiBurst) {
+            ConfettiBurstView()
+        }
     }
 }
