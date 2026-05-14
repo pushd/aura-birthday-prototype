@@ -559,9 +559,18 @@ struct EditorView: View {
 
                     if !isVideoFullScreen {
                         HStack(spacing: 8) {
-                            Button {
-                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                    isPresented = false
+                            Menu {
+                                Button {
+                                    showSendDateEditor = true
+                                } label: {
+                                    Label("Schedule Send", systemImage: "paperplane")
+                                }
+                                Button {
+                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                        isPresented = false
+                                    }
+                                } label: {
+                                    Label("Save & Close", systemImage: "checkmark")
                                 }
                             } label: {
                                 Text("Done")
@@ -1463,6 +1472,15 @@ private struct TitleEditorSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
+
+            Button {
+                dismiss()
+            } label: {
+                Text("Cancel")
+                    .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+            }
 
             Spacer()
         }
