@@ -184,6 +184,7 @@ struct EditorView: View {
     @State private var titleDidAppear = false
     @State private var isMuted = false
     @State private var inviteCardFrame: CGRect = .zero
+    @State private var slideshowTaskID = 0
 
     private var sendDateLabel: String {
         let f = DateFormatter()
@@ -291,6 +292,19 @@ struct EditorView: View {
                         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
+                // Tap-to-advance: left half = back one slide, right half = forward one slide
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: isVideoFullScreen ? geo.size.height : collapsedY)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        SpatialTapGesture()
+                            .onEnded { value in
+                                advanceSlide(by: value.location.x < geo.size.width / 2 ? -1 : 1)
+                            }
+                    )
+                    .allowsHitTesting(!drawerExpanded)
+
                 // Gradient scrim to improve legibility of title and pill buttons
                 if !isVideoFullScreen {
                     LinearGradient(
@@ -324,33 +338,18 @@ struct EditorView: View {
                         }
                         .frame(maxWidth: geo.size.width - 64)
                         Spacer().frame(height: 24)
-                        HStack(spacing: 10) {
-                            Button { showSendDateEditor = true } label: {
-                                HStack(spacing: 8) {
-                                    Text(sendDateLabel)
-                                        .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .callout))
-                                    Image(systemName: "paperplane.fill")
-                                        .font(.system(size: 15, weight: .medium))
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 9)
-                                .background(Color.white.opacity(0.25), in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.70), lineWidth: 1))
+                        Button { showInviteSheet = true } label: {
+                            HStack(spacing: 7) {
+                                Image(systemName: "person.badge.plus")
+                                    .font(.system(size: 15, weight: .medium))
+                                Text("Invite Friends & Family")
+                                    .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .callout))
                             }
-                            Button { showInviteSheet = true } label: {
-                                HStack(spacing: 7) {
-                                    Image(systemName: "person.badge.plus")
-                                        .font(.system(size: 15, weight: .medium))
-                                    Text("Invite")
-                                        .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .callout))
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 9)
-                                .background(Color.white.opacity(0.25), in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.70), lineWidth: 1))
-                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 9)
+                            .background(Color.white.opacity(0.25), in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.70), lineWidth: 1))
                         }
                         Spacer().frame(height: 32)
                     }
@@ -519,29 +518,18 @@ struct EditorView: View {
                 }
 
                 // Top bar
-                HStack {
+                HStack(alignment: .center) {
                     if isVideoFullScreen {
-                        HStack(spacing: 8) {
-                            Button {
-                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                    isVideoFullScreen = false
-                                }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .padding(10)
+                        Button {
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                isVideoFullScreen = false
                             }
-                            .buttonStyle(.glass)
-
-                            Button {
-                                isMuted.toggle()
-                            } label: {
-                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .font(.system(size: 15, weight: .medium))
-                                    .padding(10)
-                            }
-                            .buttonStyle(.glass)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .semibold))
+                                .padding(10)
                         }
+                        .buttonStyle(.glass)
                     } else {
                         Button {
                             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -555,31 +543,54 @@ struct EditorView: View {
                         }
                     }
 
-                    Spacer()
+                    if isVideoFullScreen {
+                        HStack(spacing: 3) {
+                            let total = slides.count + 1
+                            ForEach(0..<total, id: \.self) { i in
+                                Capsule()
+                                    .fill(i <= slideshowIndex
+                                          ? Color.white
+                                          : Color.white.opacity(0.35))
+                                    .frame(height: 3)
+                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .allowsHitTesting(false)
+                    } else {
+                        Spacer()
+                    }
 
-                    if !isVideoFullScreen {
-                        HStack(spacing: 8) {
-                            Menu {
-                                Button {
-                                    showSendDateEditor = true
-                                } label: {
-                                    Label("Schedule Send", systemImage: "paperplane")
-                                }
-                                Button {
-                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                        isPresented = false
-                                    }
-                                } label: {
-                                    Label("Save & Close", systemImage: "checkmark")
+                    if isVideoFullScreen {
+                        Button {
+                            isMuted.toggle()
+                        } label: {
+                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.system(size: 15, weight: .medium))
+                                .padding(10)
+                        }
+                        .buttonStyle(.glass)
+                    } else {
+                        Menu {
+                            Button {
+                                showSendDateEditor = true
+                            } label: {
+                                Label("Schedule Send", systemImage: "paperplane")
+                            }
+                            Button {
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                    isPresented = false
                                 }
                             } label: {
-                                Text("Done")
-                                    .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .body))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 8)
+                                Label("Save & Close", systemImage: "checkmark")
                             }
-                            .buttonStyle(.glass)
+                        } label: {
+                            Text("Done")
+                                .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .body))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 8)
                         }
+                        .buttonStyle(.glass)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -855,7 +866,7 @@ struct EditorView: View {
                 slideshowIndex = 0
             }
         }
-        .task {
+        .task(id: slideshowTaskID) {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2.5))
                 let total = slides.count + 1
@@ -968,15 +979,19 @@ struct EditorView: View {
             }
     }
 
+    private func advanceSlide(by delta: Int) {
+        let total = slides.count + 1
+        slideshowIndex = (slideshowIndex + delta + total) % total
+        slideshowTaskID += 1
+    }
+
     private func peekAndReveal() {
         let screenH = UIScreen.main.bounds.height
         let collY = screenH * 0.70 - 48
         let peekAmount: CGFloat = 100
-        // drawerPreamble = invisible drag handle (20) + cards scroll row (~178)
-        // Cards are faded out but still occupy space, so preamble stays at full height
-        let drawerPreamble: CGFloat = 198
+        // Reveal from the drawer's visual top edge (collY - peekAmount) to the bottom of the screen
         withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
-            tutorialScrimRevealOffset = max(0, screenH - collY + peekAmount - drawerPreamble)
+            tutorialScrimRevealOffset = max(0, screenH - collY + peekAmount)
             tutorialPeekOffset = peekAmount
         }
     }
