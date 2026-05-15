@@ -185,6 +185,7 @@ struct EditorView: View {
     @State private var isMuted = false
     @State private var inviteCardFrame: CGRect = .zero
     @State private var slideshowTaskID = 0
+    @State private var viewHeight: CGFloat = 0
 
     private var sendDateLabel: String {
         let f = DateFormatter()
@@ -228,6 +229,8 @@ struct EditorView: View {
             ZStack(alignment: .top) {
                 Color.white
                     .ignoresSafeArea()
+                    .onAppear { viewHeight = geo.size.height }
+                    .onChange(of: geo.size) { _, newSize in viewHeight = newSize.height }
 
                 ZStack(alignment: .bottomLeading) {
                     ZStack {
@@ -520,16 +523,28 @@ struct EditorView: View {
                 // Top bar
                 HStack(alignment: .center) {
                     if isVideoFullScreen {
-                        Button {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                isVideoFullScreen = false
+                        HStack(spacing: 8) {
+                            Button {
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                    isVideoFullScreen = false
+                                }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .padding(10)
                             }
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .semibold))
-                                .padding(10)
+                            .buttonStyle(.glass)
+
+                            Button {
+                                slideshowIndex = 0
+                                slideshowTaskID += 1
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .padding(10)
+                            }
+                            .buttonStyle(.glass)
                         }
-                        .buttonStyle(.glass)
                     } else {
                         Button {
                             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -538,28 +553,12 @@ struct EditorView: View {
                         } label: {
                             Image(systemName: "arrow.up.left.and.arrow.down.right")
                                 .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(.white)
                                 .padding(10)
                         }
+                        .buttonStyle(.glass)
                     }
 
-                    if isVideoFullScreen {
-                        HStack(spacing: 3) {
-                            let total = slides.count + 1
-                            ForEach(0..<total, id: \.self) { i in
-                                Capsule()
-                                    .fill(i <= slideshowIndex
-                                          ? Color.white
-                                          : Color.white.opacity(0.35))
-                                    .frame(height: 3)
-                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .allowsHitTesting(false)
-                    } else {
-                        Spacer()
-                    }
+                    Spacer()
 
                     if isVideoFullScreen {
                         Button {
@@ -664,6 +663,29 @@ struct EditorView: View {
                             }
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.93)))
+                }
+
+                // Bottom progress bar — fullscreen only
+                if isVideoFullScreen {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 3) {
+                            let total = slides.count + 1
+                            ForEach(0..<total, id: \.self) { i in
+                                Capsule()
+                                    .fill(i <= slideshowIndex
+                                          ? Color.white
+                                          : Color.white.opacity(0.35))
+                                    .frame(height: 3)
+                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1)
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 40)
+                        .allowsHitTesting(false)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
                 }
 
                 // Tutorial overlay — three steps
@@ -866,6 +888,12 @@ struct EditorView: View {
                 slideshowIndex = 0
             }
         }
+        .onChange(of: isVideoFullScreen) { _, isFullScreen in
+            if isFullScreen {
+                slideshowIndex = 0
+                slideshowTaskID += 1
+            }
+        }
         .task(id: slideshowTaskID) {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2.5))
@@ -986,12 +1014,12 @@ struct EditorView: View {
     }
 
     private func peekAndReveal() {
-        let screenH = UIScreen.main.bounds.height
-        let collY = screenH * 0.70 - 48
+        let collY = viewHeight * 0.70 - 48
         let peekAmount: CGFloat = 100
-        // Reveal from the drawer's visual top edge (collY - peekAmount) to the bottom of the screen
+        // Reveal from the top of the photo grid: drawer top + drag handle (20) + invisible cards row (~178)
+        let drawerPreamble: CGFloat = 198
         withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
-            tutorialScrimRevealOffset = max(0, screenH - collY + peekAmount)
+            tutorialScrimRevealOffset = max(0, viewHeight - collY + peekAmount - drawerPreamble)
             tutorialPeekOffset = peekAmount
         }
     }

@@ -303,18 +303,6 @@ struct ContentView: View {
                 .presentationDetents([.medium])
                 .presentationBackground(Color(.systemBackground))
         }
-        .overlay(alignment: .topTrailing) {
-            Button {
-                replayAnimation()
-            } label: {
-                Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .padding(10)
-            }
-            .padding(.top, 8)
-            .padding(.trailing, 8)
-        }
         .overlay(
             Group {
                 if showConfetti { ConfettiView() }
