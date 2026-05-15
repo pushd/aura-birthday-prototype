@@ -175,7 +175,7 @@ struct ContentView: View {
                                 .transition(.opacity)
                         }
                     }
-                    .shadow(color: Color.black.opacity(0.10), radius: 12, x: 0, y: 4)
+                    .shadow(color: Color.black.opacity(0.32), radius: 18, x: 0, y: 8)
                     .scaleEffect(placeholderScale)
                     .offset(y: isTransitioning ? 40 : 0)
                     .animation(.timingCurve(0.25, 0.1, 0.1, 1.0, duration: 1.15), value: isTransitioning)
