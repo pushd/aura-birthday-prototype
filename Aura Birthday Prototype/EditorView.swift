@@ -295,7 +295,7 @@ struct EditorView: View {
                         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
-                // Tap-to-advance: left half = back one slide, right half = forward one slide
+                // Tap: launch fullscreen in default state; left/right advance when already fullscreen
                 Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(height: isVideoFullScreen ? geo.size.height : collapsedY)
@@ -303,7 +303,13 @@ struct EditorView: View {
                     .gesture(
                         SpatialTapGesture()
                             .onEnded { value in
-                                advanceSlide(by: value.location.x < geo.size.width / 2 ? -1 : 1)
+                                if isVideoFullScreen {
+                                    advanceSlide(by: value.location.x < geo.size.width / 2 ? -1 : 1)
+                                } else {
+                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                        isVideoFullScreen = true
+                                    }
+                                }
                             }
                     )
                     .allowsHitTesting(!drawerExpanded)
@@ -523,28 +529,16 @@ struct EditorView: View {
                 // Top bar
                 HStack(alignment: .center) {
                     if isVideoFullScreen {
-                        HStack(spacing: 8) {
-                            Button {
-                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                    isVideoFullScreen = false
-                                }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .padding(10)
+                        Button {
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                isVideoFullScreen = false
                             }
-                            .buttonStyle(.glass)
-
-                            Button {
-                                slideshowIndex = 0
-                                slideshowTaskID += 1
-                            } label: {
-                                Image(systemName: "arrow.counterclockwise")
-                                    .font(.system(size: 15, weight: .medium))
-                                    .padding(10)
-                            }
-                            .buttonStyle(.glass)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .semibold))
+                                .padding(10)
                         }
+                        .buttonStyle(.glass)
                     } else {
                         Button {
                             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -561,14 +555,26 @@ struct EditorView: View {
                     Spacer()
 
                     if isVideoFullScreen {
-                        Button {
-                            isMuted.toggle()
-                        } label: {
-                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                .font(.system(size: 15, weight: .medium))
-                                .padding(10)
+                        HStack(spacing: 8) {
+                            Button {
+                                slideshowIndex = 0
+                                slideshowTaskID += 1
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .padding(10)
+                            }
+                            .buttonStyle(.glass)
+
+                            Button {
+                                isMuted.toggle()
+                            } label: {
+                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .padding(10)
+                            }
+                            .buttonStyle(.glass)
                         }
-                        .buttonStyle(.glass)
                     } else {
                         Menu {
                             Button {
@@ -897,6 +903,7 @@ struct EditorView: View {
         .task(id: slideshowTaskID) {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2.5))
+                guard !Task.isCancelled else { break }
                 let total = slides.count + 1
                 slideshowIndex = (slideshowIndex + 1) % max(1, total)
             }
