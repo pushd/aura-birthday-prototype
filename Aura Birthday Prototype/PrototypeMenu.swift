@@ -43,6 +43,7 @@ struct PrototypeMenuView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("protoHorizontalCards") private var horizontalCards = false
     @AppStorage("protoVideoBlurEnabled") private var videoBlurEnabled = false
+    @AppStorage("protoBlurBackground") private var blurBackground = false
     @State private var showConfettiBurst = false
 
     var body: some View {
@@ -84,6 +85,22 @@ struct PrototypeMenuView: View {
                             .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
                             .foregroundStyle(.primary)
                         Text("Blur the preview video after 12s to prompt action")
+                            .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+
+                Divider()
+                    .padding(.leading, 20)
+
+                Toggle(isOn: $blurBackground) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Blurred background fill")
+                            .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
+                            .foregroundStyle(.primary)
+                        Text("Fit photos to width; blurred photo fills empty space")
                             .font(.custom("TTCommonsPro-Rg", size: 13, relativeTo: .caption))
                             .foregroundStyle(.secondary)
                     }

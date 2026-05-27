@@ -39,7 +39,7 @@ private struct TitleEditorSheetDetent: CustomPresentationDetent {
 
 private struct SendDateSheetDetent: CustomPresentationDetent {
     static func height(in context: Context) -> CGFloat? {
-        context.maxDetentValue * 0.5 + 240
+        context.maxDetentValue * 0.5 + 144
     }
 }
 
@@ -186,6 +186,7 @@ struct EditorView: View {
     @State private var inviteCardFrame: CGRect = .zero
     @State private var slideshowTaskID = 0
     @State private var viewHeight: CGFloat = 0
+    @State private var isEditMode = false
 
     private var sendDateLabel: String {
         let f = DateFormatter()
@@ -219,7 +220,7 @@ struct EditorView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let baseHeroHeight = geo.size.height * 0.70
+            let baseHeroHeight = geo.size.height * 0.60
             let expandedY = topInset
             let collapsedY = baseHeroHeight - 48
 
@@ -256,7 +257,7 @@ struct EditorView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: geo.size.height)
                 .mask {
-                    if isVideoFullScreen {
+                    if isVideoFullScreen || (showTutorial && tutorialStep == 4) {
                         Rectangle()
                     } else {
                         LinearGradient(
@@ -336,23 +337,12 @@ struct EditorView: View {
                 if !isVideoFullScreen {
                     VStack(alignment: .center, spacing: 0) {
                         Spacer().frame(height: 32)
-                        Button { showTitleEditor = true } label: {
-                            Text(titleText)
-                                .font(.custom("TTCommonsPro-Bd", size: 27, relativeTo: .title3))
-                                .underline()
-                                .foregroundStyle(.white)
-                                .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(nil)
-                        }
-                        .frame(maxWidth: geo.size.width - 64)
-                        Spacer().frame(height: 24)
                         Button { showInviteSheet = true } label: {
                             HStack(spacing: 7) {
                                 Image(systemName: "person.badge.plus")
                                     .font(.system(size: 15, weight: .medium))
                                 Text("Invite Friends & Family")
-                                    .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .callout))
+                                    .font(.custom("TTCommonsPro-Db", size: 17, relativeTo: .callout))
                             }
                             .foregroundStyle(.white)
                             .padding(.horizontal, 18)
@@ -360,9 +350,9 @@ struct EditorView: View {
                             .background(Color.white.opacity(0.25), in: Capsule())
                             .overlay(Capsule().stroke(Color.white.opacity(0.70), lineWidth: 1))
                         }
-                        Spacer().frame(height: 32)
+                        Spacer().frame(height: 16)
                     }
-                    .position(x: geo.size.width / 2, y: collapsedY - 73)
+                    .position(x: geo.size.width / 2, y: collapsedY - 52)
                     .offset(y: titleDidAppear ? 0 : -20)
                     .opacity(contentVisible && !drawerExpanded && titleDidAppear ? 1 : 0)
                     .allowsHitTesting(contentVisible && !drawerExpanded && titleDidAppear)
@@ -425,6 +415,32 @@ struct EditorView: View {
                         .opacity(showTutorial && tutorialStep == 4 ? 0 : 1)
                         .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showTutorial && tutorialStep == 4)
                         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
+
+                        // Memories count + edit mode toggle — expanded state only
+                        if drawerExpanded {
+                            let contributorCount = 1 + (melissaInvited ? 1 : 0) + (alexanderInvited ? 1 : 0)
+                            HStack {
+                                Text("\(slides.count) memories • \(contributorCount) contributor\(contributorCount == 1 ? "" : "s")")
+                                    .font(.custom("TTCommonsPro-Db", size: 13, relativeTo: .caption))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        isEditMode.toggle()
+                                    }
+                                } label: {
+                                    Text(isEditMode ? "Done" : "Edit")
+                                        .font(.custom("TTCommonsPro-Db", size: 13, relativeTo: .caption))
+                                        .foregroundStyle(.black)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Color(white: 0.88), in: Capsule())
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .transition(.opacity)
+                        }
 
                         // Slide grid — bento layout: alternating feature rows and equal rows
                         ScrollViewReader { proxy in
@@ -699,8 +715,16 @@ struct EditorView: View {
                     ZStack {
                         VStack(spacing: 0) {
                             Color.black.opacity(0.72)
-                            Color.clear
-                                .frame(height: tutorialScrimRevealOffset)
+                            if tutorialScrimRevealOffset > 0 {
+                                LinearGradient(
+                                    colors: [Color.black.opacity(0.72), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                                .frame(height: 20)
+                                Color.clear
+                                    .frame(height: max(0, tutorialScrimRevealOffset - 20))
+                            }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea()
@@ -813,7 +837,7 @@ struct EditorView: View {
         }
         .sheet(isPresented: $showInviteSheet) {
             InviteSheetView(melissaInvited: $melissaInvited, alexanderInvited: $alexanderInvited)
-                .presentationDetents([.custom(InviteSheetDetent.self)])
+                .presentationDetents([.medium])
                 .presentationBackground(Color(.systemBackground))
         }
         .sheet(isPresented: $showTitleEditor) {
@@ -967,7 +991,11 @@ struct EditorView: View {
         Group {
             switch slide {
             case .photo(let photo):
-                PhotoGridCell(index: idx, image: photo.image, selectedIndex: $selectedSlideIndex)
+                PhotoGridCell(index: idx, image: photo.image, selectedIndex: $selectedSlideIndex, isEditMode: isEditMode) {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                        slides.removeAll { $0.id == photo.id }
+                    }
+                }
             case .message(let message):
                 MessageGridCell(message: message) {
                     editingMessageID = message.id
@@ -1021,7 +1049,7 @@ struct EditorView: View {
     }
 
     private func peekAndReveal() {
-        let collY = viewHeight * 0.70 - 48
+        let collY = viewHeight * 0.60 - 48
         let peekAmount: CGFloat = 100
         // Reveal from the top of the photo grid: drawer top + drag handle (20) + invisible cards row (~178)
         let drawerPreamble: CGFloat = 198
@@ -1038,6 +1066,8 @@ private struct PhotoGridCell: View {
     let index: Int
     let image: UIImage
     @Binding var selectedIndex: Int?
+    var isEditMode: Bool = false
+    var onRemove: (() -> Void)? = nil
 
     var body: some View {
         Color(.secondarySystemFill)
@@ -1048,10 +1078,28 @@ private struct PhotoGridCell: View {
                     .scaledToFill()
             }
             .clipped()
+            .overlay(alignment: .topTrailing) {
+                if isEditMode {
+                    Button {
+                        onRemove?()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(7)
+                    }
+                    .buttonStyle(.glass)
+                    .padding(6)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    selectedIndex = index
+                if isEditMode {
+                    onRemove?()
+                } else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        selectedIndex = index
+                    }
                 }
             }
     }
@@ -1086,8 +1134,10 @@ private struct SlideshowPhotoView: View {
     let containerWidth: CGFloat
     let containerHeight: CGFloat
     @State private var panOffset: CGFloat
+    @AppStorage("protoBlurBackground") private var blurBackground = false
 
     private var isLandscape: Bool { image.size.width > image.size.height }
+    private var aspectRatio: CGFloat { image.size.width / max(image.size.height, 1) }
 
     init(image: UIImage, containerWidth: CGFloat, containerHeight: CGFloat) {
         self.image = image
@@ -1098,20 +1148,42 @@ private struct SlideshowPhotoView: View {
     }
 
     var body: some View {
-        let scaledWidth = (image.size.width / max(image.size.height, 1)) * containerHeight
-        ZStack {
-            Color.black
-            Image(uiImage: image)
-                .resizable()
-                .frame(width: scaledWidth, height: containerHeight)
-                .offset(x: panOffset)
-        }
-        .frame(width: containerWidth, height: containerHeight)
-        .clipped()
-        .onAppear {
-            guard isLandscape else { return }
-            withAnimation(.linear(duration: 3.0)) {
-                panOffset = containerWidth * 0.1
+        if blurBackground {
+            // Fit to width, blurred photo fills empty space above/below
+            let photoHeight = containerWidth / aspectRatio
+            ZStack(alignment: .center) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: containerWidth, height: containerHeight)
+                    .blur(radius: 28)
+                    .overlay(Color.black.opacity(0.12))
+                    .clipped()
+                    .allowsHitTesting(false)
+
+                Image(uiImage: image)
+                    .resizable()
+                    .frame(width: containerWidth, height: photoHeight)
+            }
+            .frame(width: containerWidth, height: containerHeight)
+            .clipped()
+        } else {
+            // Default: fit to height, pan landscape
+            let scaledWidth = aspectRatio * containerHeight
+            ZStack {
+                Color.black
+                Image(uiImage: image)
+                    .resizable()
+                    .frame(width: scaledWidth, height: containerHeight)
+                    .offset(x: panOffset)
+            }
+            .frame(width: containerWidth, height: containerHeight)
+            .clipped()
+            .onAppear {
+                guard isLandscape else { return }
+                withAnimation(.linear(duration: 3.0)) {
+                    panOffset = containerWidth * 0.1
+                }
             }
         }
     }
@@ -1436,35 +1508,132 @@ private struct InviteSheetView: View {
     var melissaInvited: Binding<Bool>
     var alexanderInvited: Binding<Bool>
 
+    @Environment(\.dismiss) private var dismiss
+    @State private var melissaPending = false
+    @State private var alexanderPending = false
+
     var body: some View {
         VStack(spacing: 0) {
-            Text("Invite Friends & Family")
-                .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-                .padding(.top, 32)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Invite friends & family")
+                    .font(.custom("TTCommonsPro-Bd", size: 24, relativeTo: .title))
+                    .foregroundStyle(.primary)
 
-            Text("Invite others to add their own photos, videos, and messages to Kayla's video gift.")
-                .font(.custom("TTCommonsPro-Rg", size: 16, relativeTo: .callout))
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.center)
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 32)
-                .padding(.top, 10)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isInvited: melissaInvited)
-                    ContributorCard(name: "Alexander", avatarName: "", isInvited: alexanderInvited)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                Text("Add people to contribute to Kayla's birthday gift. We'll let you know once they've been added to the video.")
+                    .font(.custom("TTCommonsPro-Rg", size: 15, relativeTo: .callout))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(3)
             }
-            .padding(.top, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.top, 28)
+            .padding(.bottom, 20)
+
+            Divider()
+
+            VStack(spacing: 0) {
+                InviteContactRow(
+                    name: "Melissa",
+                    avatarName: "avatar-melissa",
+                    isInvited: melissaInvited,
+                    isPending: $melissaPending
+                )
+                Divider()
+                    .padding(.leading, 76)
+                InviteContactRow(
+                    name: "Alexander",
+                    avatarName: "",
+                    isInvited: alexanderInvited,
+                    isPending: $alexanderPending
+                )
+            }
 
             Spacer()
+
+            Button { dismiss() } label: {
+                Text("Done")
+                    .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        Color(red: 0.22, green: 0.33, blue: 0.27),
+                        in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    )
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
         }
+    }
+}
+
+private struct InviteContactRow: View {
+    let name: String
+    let avatarName: String
+    var isInvited: Binding<Bool>
+    @Binding var isPending: Bool
+
+    private func loadAvatar() -> UIImage? {
+        guard !avatarName.isEmpty else { return nil }
+        return UIImage(named: avatarName)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color(red: 0.612, green: 0.820, blue: 0.937))
+                if let img = loadAvatar() {
+                    Image(uiImage: img).resizable().scaledToFill()
+                } else {
+                    Text(String(name.prefix(1)))
+                        .font(.custom("TTCommonsPro-Bd", size: 16, relativeTo: .callout))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(Circle())
+
+            Text(name)
+                .font(.custom("TTCommonsPro-Md", size: 16, relativeTo: .callout))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            Group {
+                if isInvited.wrappedValue {
+                    HStack(spacing: 5) {
+                        Text("Invited")
+                            .font(.custom("TTCommonsPro-Md", size: 15, relativeTo: .subheadline))
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                } else if isPending {
+                    ProgressView()
+                        .tint(.secondary)
+                } else {
+                    Button {
+                        isPending = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                            isPending = false
+                            isInvited.wrappedValue = true
+                        }
+                    } label: {
+                        Text("Invite")
+                            .font(.custom("TTCommonsPro-Db", size: 14, relativeTo: .subheadline))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(Color(white: 0.88), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: isInvited.wrappedValue)
+            .animation(.easeInOut(duration: 0.2), value: isPending)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
     }
 }
 
@@ -1561,90 +1730,108 @@ private struct SendDateEditorSheet: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                Image(uiImage: UIImage(named: "prompt-schedule-art") ?? UIImage())
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
-                    .frame(height: 160)
-                    .padding(.top, 28)
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 0) {
+                    Image(uiImage: UIImage(named: "prompt-schedule-art") ?? UIImage())
+                        .resizable()
+                        .renderingMode(.original)
+                        .scaledToFit()
+                        .frame(height: 160)
+                        .padding(.top, 28)
 
-                Text("Schedule Send Date")
-                    .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                    Text("Schedule Send Date")
+                        .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title2))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 20)
+
+                    VStack(spacing: 4) {
+                        Text(formattedDate)
+                            .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title3))
+                            .foregroundStyle(.primary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
+
+                    Button {
+                        showPicker = true
+                    } label: {
+                        Text("Change date")
+                            .font(.custom("TTCommonsPro-Db", size: 15, relativeTo: .subheadline))
+                            .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
+                            .padding(.vertical, 10)
+                    }
+                    .padding(.top, 4)
+
+                    Button {
+                        onConfirm(draftDate)
+                        dismiss()
+                    } label: {
+                        Text("Confirm")
+                            .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(
+                                Color(red: 0.22, green: 0.33, blue: 0.27),
+                                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            )
+                    }
+                    .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                // Date label
-                VStack(spacing: 4) {
-                    Text(formattedDate)
-                        .font(.custom("TTCommonsPro-Bd", size: 22, relativeTo: .title3))
-                        .foregroundStyle(.primary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.horizontal, 20)
-                .padding(.top, 24)
-
-                Button {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
-                        showPicker.toggle()
+                    Button {
+                        onSendNow()
+                        dismiss()
+                    } label: {
+                        Text("Send now")
+                            .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
+                            .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .stroke(Color(red: 0.22, green: 0.33, blue: 0.27), lineWidth: 1.5)
+                            )
                     }
-                } label: {
-                    Text(showPicker ? "Hide picker" : "Change date")
-                        .font(.custom("TTCommonsPro-Db", size: 15, relativeTo: .subheadline))
-                        .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
-                        .padding(.vertical, 10)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+                    .padding(.bottom, 20)
                 }
-                .padding(.top, 4)
-
-                if showPicker {
+            }
+            .scrollIndicators(.hidden)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showPicker) {
+                ScrollView {
                     DatePicker("", selection: $draftDate, displayedComponents: .date)
                         .datePickerStyle(.graphical)
                         .labelsHidden()
                         .padding(.horizontal, 12)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .padding(.top, 8)
                 }
-
-                Button {
-                    onConfirm(draftDate)
-                    dismiss()
-                } label: {
-                    Text("Confirm")
-                        .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(
-                            Color(red: 0.22, green: 0.33, blue: 0.27),
-                            in: RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        )
+                .scrollIndicators(.hidden)
+                .navigationBarBackButtonHidden(true)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            showPicker = false
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 15, weight: .semibold))
+                                Text("Back")
+                                    .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .body))
+                            }
+                            .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
+                        }
+                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-
-                Button {
-                    onSendNow()
-                    dismiss()
-                } label: {
-                    Text("Send now")
-                        .font(.custom("TTCommonsPro-Db", size: 18, relativeTo: .body))
-                        .foregroundStyle(Color(red: 0.22, green: 0.33, blue: 0.27))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .stroke(Color(red: 0.22, green: 0.33, blue: 0.27), lineWidth: 1.5)
-                        )
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 20)
             }
         }
-        .scrollIndicators(.hidden)
     }
 }
 
