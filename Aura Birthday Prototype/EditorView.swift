@@ -544,8 +544,8 @@ struct EditorView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .opacity(contentVisible ? 1 : 0)
-                    .allowsHitTesting(contentVisible)
+                    .opacity(contentVisible && !drawerExpanded ? 1 : 0)
+                    .allowsHitTesting(contentVisible && !drawerExpanded)
 
                     Spacer()
 
@@ -574,33 +574,44 @@ struct EditorView: View {
                             }
                         } else {
                             Menu {
-                                Button {
-                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                        isVideoFullScreen = true
+                                Section("Personalize") {
+                                    Button { } label: {
+                                        Label("Theme", systemImage: "paintpalette.fill")
                                     }
-                                } label: {
-                                    Label("Preview video", systemImage: "play.fill")
-                                }
-                                Button {
-                                    showSendDateEditor = true
-                                } label: {
-                                    Label("Schedule gift", systemImage: "calendar")
-                                }
-                                Divider()
-                                Button {
-                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                        isPresented = false
+                                    Button { } label: {
+                                        Label("Music", systemImage: "music.note")
                                     }
-                                } label: {
-                                    Label("Save and close", systemImage: "xmark.circle.fill")
+                                    Button { } label: {
+                                        Label("Effects", systemImage: "wand.and.stars")
+                                    }
+                                }
+                                Section("Message") {
+                                    Button { } label: {
+                                        Label("Birthday message", systemImage: "text.bubble.fill")
+                                    }
+                                }
+                                Section {
+                                    Button {
+                                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                            isVideoFullScreen = true
+                                        }
+                                    } label: {
+                                        Label("Preview video", systemImage: "play.fill")
+                                    }
+                                    Button {
+                                        showSendDateEditor = true
+                                    } label: {
+                                        Label("Schedule gift", systemImage: "calendar")
+                                    }
                                 }
                             } label: {
                                 Image(systemName: "gearshape.fill")
                                     .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(.primary)
+                                    .foregroundStyle(Color.primary)
                                     .frame(width: 44, height: 44)
                                     .glassEffect(.regular.interactive())
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                     .opacity(contentVisible && !drawerExpanded ? 1 : 0)
@@ -703,28 +714,21 @@ struct EditorView: View {
                 // Tutorial overlay — three steps
                 if showTutorial && contentVisible {
                     ZStack {
-                        // Step 4: drawer peeks above the scrim (zIndex 1), so fade the scrim
-                        // out before collapsedY to avoid a hard edge. Other steps keep
-                        // a solid scrim so highlighted cards pop against full-opacity black.
-                        if tutorialStep == 4 {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .black.opacity(0.72), location: 0),
-                                    .init(color: .black.opacity(0.72), location: max(0, (collapsedY - 160) / geo.size.height)),
-                                    .init(color: .clear, location: max(0, (collapsedY - 20) / geo.size.height))
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .ignoresSafeArea()
-                            .transition(.opacity)
-                        } else {
-                            Color.black.opacity(0.72)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .ignoresSafeArea()
-                                .transition(.opacity)
-                        }
+                        // Gradient scrim: solid above the drawer, fades to clear at collapsedY.
+                        // In step 4 the drawer sits above the scrim (zIndex 1) so this
+                        // prevents a hard edge. In steps 2–3 the card highlights sit just
+                        // below collapsedY against the softened background.
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black.opacity(0.72), location: 0),
+                                .init(color: .black.opacity(0.72), location: max(0, (collapsedY - 120) / geo.size.height)),
+                                .init(color: .clear, location: max(0, collapsedY / geo.size.height))
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .ignoresSafeArea()
 
                         if tutorialStep == 2 {
                             VStack(spacing: 0) {
@@ -1083,12 +1087,13 @@ private struct PhotoGridCell: View {
                     Button {
                         onRemove?()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .semibold))
-                            .padding(7)
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, Color(white: 0.15, opacity: 0.75))
                     }
-                    .buttonStyle(.glass)
-                    .padding(6)
+                    .buttonStyle(.plain)
+                    .padding(4)
                     .transition(.scale.combined(with: .opacity))
                 }
             }
@@ -1511,12 +1516,12 @@ private struct InviteFriendsCard: View {
                         .frame(width: 105, height: 108)
                         .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
-                Text("Invite Friends\n& Family")
-                    .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                Text("Invite Friends & Family")
+                    .font(.custom("TTCommonsPro-Bd", size: 11, relativeTo: .caption))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 8)
+                    .lineLimit(2)
+                    .padding(.horizontal, 2)
                     .padding(.top, isCompact ? 12 : 8)
                     .padding(.bottom, 12)
             }
