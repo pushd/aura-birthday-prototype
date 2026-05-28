@@ -180,13 +180,14 @@ struct EditorView: View {
     @State private var showTutorial = true
     @State private var tutorialStep: Int = 1
     @State private var tutorialPeekOffset: CGFloat = 0
-    @State private var tutorialScrimRevealOffset: CGFloat = 0
+
     @State private var titleDidAppear = false
     @State private var isMuted = false
     @State private var inviteCardFrame: CGRect = .zero
     @State private var slideshowTaskID = 0
     @State private var viewHeight: CGFloat = 0
     @State private var isEditMode = false
+    @State private var showPrototypeMenu = false
 
     private var sendDateLabel: String {
         let f = DateFormatter()
@@ -257,7 +258,7 @@ struct EditorView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: geo.size.height)
                 .mask {
-                    if isVideoFullScreen || (showTutorial && tutorialStep == 4) {
+                    if isVideoFullScreen {
                         Rectangle()
                     } else {
                         LinearGradient(
@@ -333,33 +334,6 @@ struct EditorView: View {
                     .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
-                // Title + send date above drawer
-                if !isVideoFullScreen {
-                    VStack(alignment: .center, spacing: 0) {
-                        Spacer().frame(height: 32)
-                        Button { showInviteSheet = true } label: {
-                            HStack(spacing: 7) {
-                                Image(systemName: "person.badge.plus")
-                                    .font(.system(size: 15, weight: .medium))
-                                Text("Invite Friends & Family")
-                                    .font(.custom("TTCommonsPro-Db", size: 17, relativeTo: .callout))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 9)
-                            .background(Color.white.opacity(0.25), in: Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.70), lineWidth: 1))
-                        }
-                        Spacer().frame(height: 16)
-                    }
-                    .position(x: geo.size.width / 2, y: collapsedY - 52)
-                    .offset(y: titleDidAppear ? 0 : -20)
-                    .opacity(contentVisible && !drawerExpanded && titleDidAppear ? 1 : 0)
-                    .allowsHitTesting(contentVisible && !drawerExpanded && titleDidAppear)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: titleDidAppear)
-                    .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
-                }
-
                 if !isVideoFullScreen {
                     VStack(spacing: 0) {
                         // Invisible drag handle
@@ -372,12 +346,10 @@ struct EditorView: View {
                         // Contributor + prompt cards — vertical when collapsed, horizontal when expanded
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ContributorCard(
-                                    name: "Melissa",
-                                    avatarName: "avatar-melissa",
+                                InviteFriendsCard(
                                     isCompact: false,
-                                    isInvited: $melissaInvited,
-                                    isHorizontal: drawerExpanded
+                                    isHorizontal: drawerExpanded,
+                                    onTap: { showInviteSheet = true }
                                 )
                                 .background(
                                     GeometryReader { proxy in
@@ -540,84 +512,102 @@ struct EditorView: View {
                     .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: -2)
                     .offset(y: drawerY - (showTutorial && tutorialStep == 4 ? tutorialPeekOffset : 0))
                     .opacity(contentVisible ? 1 : 0)
+                    .zIndex(showTutorial && tutorialStep == 4 ? 1 : 0)
                 }
 
                 // Top bar
                 HStack(alignment: .center) {
-                    if isVideoFullScreen {
-                        Button {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                isVideoFullScreen = false
-                            }
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .semibold))
-                                .padding(10)
-                        }
-                        .buttonStyle(.glass)
-                    } else {
-                        Button {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                isVideoFullScreen = true
-                            }
-                        } label: {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                .font(.system(size: 15, weight: .medium))
-                                .padding(10)
-                        }
-                        .buttonStyle(.glass)
-                    }
-
-                    Spacer()
-
-                    if isVideoFullScreen {
-                        HStack(spacing: 8) {
+                    // Close/back button — always accessible regardless of drawer state
+                    Group {
+                        if isVideoFullScreen {
                             Button {
-                                slideshowIndex = 0
-                                slideshowTaskID += 1
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                    isVideoFullScreen = false
+                                }
                             } label: {
-                                Image(systemName: "arrow.counterclockwise")
-                                    .font(.system(size: 15, weight: .medium))
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 15, weight: .semibold))
                                     .padding(10)
                             }
                             .buttonStyle(.glass)
-
-                            Button {
-                                isMuted.toggle()
-                            } label: {
-                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .font(.system(size: 15, weight: .medium))
-                                    .padding(10)
-                            }
-                            .buttonStyle(.glass)
-                        }
-                    } else {
-                        Menu {
-                            Button {
-                                showSendDateEditor = true
-                            } label: {
-                                Label("Schedule Send", systemImage: "paperplane")
-                            }
+                        } else {
                             Button {
                                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
                                     isPresented = false
                                 }
                             } label: {
-                                Label("Save & Close", systemImage: "checkmark")
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .frame(width: 44, height: 44)
+                                    .glassEffect(.regular.interactive())
                             }
-                        } label: {
-                            Text("Done")
-                                .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .body))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 8)
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.glass)
                     }
+                    .opacity(contentVisible ? 1 : 0)
+                    .allowsHitTesting(contentVisible)
+
+                    Spacer()
+
+                    // Right controls — hide when drawer is expanded
+                    Group {
+                        if isVideoFullScreen {
+                            HStack(spacing: 8) {
+                                Button {
+                                    slideshowIndex = 0
+                                    slideshowTaskID += 1
+                                } label: {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(.system(size: 15, weight: .medium))
+                                        .padding(10)
+                                }
+                                .buttonStyle(.glass)
+
+                                Button {
+                                    isMuted.toggle()
+                                } label: {
+                                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                        .font(.system(size: 15, weight: .medium))
+                                        .padding(10)
+                                }
+                                .buttonStyle(.glass)
+                            }
+                        } else {
+                            Menu {
+                                Button {
+                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                        isVideoFullScreen = true
+                                    }
+                                } label: {
+                                    Label("Preview video", systemImage: "play.fill")
+                                }
+                                Button {
+                                    showSendDateEditor = true
+                                } label: {
+                                    Label("Schedule gift", systemImage: "calendar")
+                                }
+                                Divider()
+                                Button {
+                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                        isPresented = false
+                                    }
+                                } label: {
+                                    Label("Save and close", systemImage: "xmark.circle.fill")
+                                }
+                            } label: {
+                                Image(systemName: "gearshape.fill")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(.primary)
+                                    .frame(width: 44, height: 44)
+                                    .glassEffect(.regular.interactive())
+                            }
+                        }
+                    }
+                    .opacity(contentVisible && !drawerExpanded ? 1 : 0)
+                    .allowsHitTesting(contentVisible && !drawerExpanded)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, topInset + 8)
-                .opacity(contentVisible && !drawerExpanded ? 1 : 0)
-                .allowsHitTesting(contentVisible && !drawerExpanded)
 
                 // Lightbox — shown when a photo slide is tapped
                 if let idx = selectedSlideIndex, idx < slides.count, case .photo(let photo) = slides[idx] {
@@ -713,28 +703,34 @@ struct EditorView: View {
                 // Tutorial overlay — three steps
                 if showTutorial && contentVisible {
                     ZStack {
-                        VStack(spacing: 0) {
+                        // Step 4: drawer peeks above the scrim (zIndex 1), so fade the scrim
+                        // out before collapsedY to avoid a hard edge. Other steps keep
+                        // a solid scrim so highlighted cards pop against full-opacity black.
+                        if tutorialStep == 4 {
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .black.opacity(0.72), location: 0),
+                                    .init(color: .black.opacity(0.72), location: max(0, (collapsedY - 160) / geo.size.height)),
+                                    .init(color: .clear, location: max(0, (collapsedY - 20) / geo.size.height))
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .ignoresSafeArea()
+                            .transition(.opacity)
+                        } else {
                             Color.black.opacity(0.72)
-                            if tutorialScrimRevealOffset > 0 {
-                                LinearGradient(
-                                    colors: [Color.black.opacity(0.72), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                                .frame(height: 20)
-                                Color.clear
-                                    .frame(height: max(0, tutorialScrimRevealOffset - 20))
-                            }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .ignoresSafeArea()
+                                .transition(.opacity)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .ignoresSafeArea()
-                        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: tutorialScrimRevealOffset)
 
                         if tutorialStep == 2 {
                             VStack(spacing: 0) {
                                 Spacer().frame(height: collapsedY + 20)
                                 HStack(spacing: 0) {
-                                    ContributorCard(name: "Melissa", avatarName: "avatar-melissa", isCompact: false, isHorizontal: false)
+                                    InviteFriendsCard(isCompact: false, isHorizontal: false, onTap: {})
                                         .padding(.leading, 16)
                                     Spacer()
                                 }
@@ -768,13 +764,13 @@ struct EditorView: View {
                                     Text("Welcome to Kayla's group video!")
                                         .transition(.opacity)
                                 } else if tutorialStep == 2 {
-                                    Text("You can invite other members from the frame to add more memories.")
+                                    Text("Invite friends and family to add their own memories to Kayla's gift.")
                                         .transition(.opacity)
                                 } else if tutorialStep == 3 {
                                     Text("Start by adding more photos to make Kayla's gift extra special!")
                                         .transition(.opacity)
                                 } else {
-                                    Text("View the photos we've already added. Add or remove photos and drag and drop to reorder in the slideshow.")
+                                    Text("View the memories we've already added. Add or remove memories and drag and drop to reorder in the slideshow.")
                                         .transition(.opacity)
                                 }
                             }
@@ -792,7 +788,7 @@ struct EditorView: View {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         showTutorial = false
                                         tutorialPeekOffset = 0
-                                        tutorialScrimRevealOffset = 0
+
                                     }
                                 }
                             } label: {
@@ -800,7 +796,7 @@ struct EditorView: View {
                                     .font(.custom("TTCommonsPro-Db", size: 17, relativeTo: .body))
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 28)
-                                    .padding(.vertical, 12)
+                                    .frame(height: 44)
                                     .background(Color.white.opacity(0.2), in: Capsule())
                             }
                         }
@@ -834,6 +830,11 @@ struct EditorView: View {
             }
             .presentationDetents([.medium])
             .presentationBackground(Color(.systemBackground))
+        }
+        .sheet(isPresented: $showPrototypeMenu) {
+            PrototypeMenuView()
+                .presentationDetents([.medium])
+                .presentationBackground(Color(.systemBackground))
         }
         .sheet(isPresented: $showInviteSheet) {
             InviteSheetView(melissaInvited: $melissaInvited, alexanderInvited: $alexanderInvited)
@@ -942,7 +943,6 @@ struct EditorView: View {
                 peekAndReveal()
             } else {
                 tutorialPeekOffset = 0
-                tutorialScrimRevealOffset = 0
             }
         }
         .onChange(of: showTutorial) { _, isShowing in
@@ -1049,13 +1049,13 @@ struct EditorView: View {
     }
 
     private func peekAndReveal() {
-        let collY = viewHeight * 0.60 - 48
-        let peekAmount: CGFloat = 100
-        // Reveal from the top of the photo grid: drawer top + drag handle (20) + invisible cards row (~178)
-        let drawerPreamble: CGFloat = 198
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
-            tutorialScrimRevealOffset = max(0, viewHeight - collY + peekAmount - drawerPreamble)
-            tutorialPeekOffset = peekAmount
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) {
+            tutorialPeekOffset = 120
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.82)) {
+                tutorialPeekOffset = 0
+            }
         }
     }
 }
@@ -1423,6 +1423,109 @@ private struct ContributorCard: View {
             .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
             .animation(.spring(response: 0.38, dampingFraction: 0.85), value: isCompact)
             .onTapGesture { handleTap() }
+        }
+    }
+}
+
+// MARK: - Invite Friends Card
+
+private struct InviteFriendsCard: View {
+    var isCompact: Bool = false
+    var isHorizontal: Bool = false
+    let onTap: () -> Void
+
+    // Three avatars placed at ~120° apart around a central anchor point.
+    // Offsets are expressed as multiples of r (center-to-center radius).
+    // Angles chosen to give: "A" upper-right, Melissa lower-right, "S" left.
+    @ViewBuilder
+    private func avatarCluster(baseSize: CGFloat) -> some View {
+        let r = baseSize * 0.47
+        ZStack {
+            // "A" — blue, upper-right, behind
+            Circle()
+                .fill(Color(red: 0.18, green: 0.53, blue: 0.98))
+                .frame(width: baseSize, height: baseSize)
+                .overlay(
+                    Text("A")
+                        .font(.system(size: baseSize * 0.40, weight: .bold))
+                        .foregroundStyle(.white)
+                )
+                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                .offset(x: r * 0.72, y: -r * 0.72)
+                .zIndex(0)
+
+            // "S" — coral, left, middle layer
+            Circle()
+                .fill(Color(red: 0.94, green: 0.42, blue: 0.30))
+                .frame(width: baseSize * 0.88, height: baseSize * 0.88)
+                .overlay(
+                    Text("S")
+                        .font(.system(size: baseSize * 0.88 * 0.40, weight: .bold))
+                        .foregroundStyle(.white)
+                )
+                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                .offset(x: -r * 0.89, y: -r * 0.17)
+                .zIndex(1)
+
+            // Melissa — photo, lower-right, front
+            Group {
+                if let img = UIImage(named: "avatar-melissa") {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Circle().fill(Color(red: 0.612, green: 0.820, blue: 0.937))
+                }
+            }
+            .frame(width: baseSize * 0.78, height: baseSize * 0.78)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+            .offset(x: r * 0.28, y: r * 0.88)
+            .zIndex(2)
+        }
+    }
+
+    var body: some View {
+        if isHorizontal {
+            HStack(spacing: 12) {
+                avatarCluster(baseSize: 28)
+                    .frame(width: 44, height: 44)
+                Text("Invite Friends\n& Family")
+                    .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(width: 180)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
+            .onTapGesture { onTap() }
+        } else {
+            VStack(spacing: 0) {
+                if !isCompact {
+                    avatarCluster(baseSize: 40)
+                        .frame(width: 105, height: 108)
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
+                Text("Invite Friends\n& Family")
+                    .font(.custom("TTCommonsPro-Bd", size: 13, relativeTo: .caption))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+                    .padding(.top, isCompact ? 12 : 8)
+                    .padding(.bottom, 12)
+            }
+            .frame(width: 105)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 3)
+            .animation(.spring(response: 0.38, dampingFraction: 0.85), value: isCompact)
+            .onTapGesture { onTap() }
         }
     }
 }

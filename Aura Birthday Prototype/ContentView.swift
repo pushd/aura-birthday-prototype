@@ -150,20 +150,33 @@ struct ContentView: View {
 
                 // Emerged single video placeholder
                 if placeholderVisible && !showEditor {
+                    let cardWidth: CGFloat = 280
+                    let cardHeight: CGFloat = cardWidth * 16 / 9
                     ZStack {
-                        VideoPlayer(player: placeholderPlayer)
-                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .stroke(Color.black.opacity(0.06))
-                            )
-                            .frame(width: 280, height: 280 * 16 / 9)
-                            .blur(radius: videoBlurPromptEnabled && videoBlurVisible ? 20 : 0)
+                        ZStack {
+                            Image("birthday-message-original-Cover")
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: cardWidth, height: cardHeight)
+                                .blur(radius: 28)
+                                .overlay(Color.black.opacity(0.12))
+                                .clipped()
+                                .allowsHitTesting(false)
+
+                            TransparentVideoPlayer(player: placeholderPlayer)
+                                .frame(width: cardWidth, height: cardHeight)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(Color.black.opacity(0.06))
+                        )
+                        .blur(radius: videoBlurPromptEnabled && videoBlurVisible ? 20 : 0)
 
                         if videoBlurPromptEnabled && videoBlurVisible {
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .fill(Color.black.opacity(0.15))
-                                .frame(width: 280, height: 280 * 16 / 9)
+                                .frame(width: cardWidth, height: cardHeight)
                                 .overlay(
                                     Text("Get started to see the whole video!")
                                         .font(.custom("TTCommonsPro-Bd", size: 18, relativeTo: .callout))
@@ -596,6 +609,40 @@ struct ConfettiBurstView: View {
         .task {
             try? await Task.sleep(for: .seconds(2))
             showConfetti = true
+        }
+    }
+}
+
+// MARK: - Transparent Video Player
+
+private struct TransparentVideoPlayer: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> PlayerView { PlayerView(player: player) }
+    func updateUIView(_ uiView: PlayerView, context: Context) { uiView.player = player }
+
+    final class PlayerView: UIView {
+        private let playerLayer = AVPlayerLayer()
+
+        var player: AVPlayer? {
+            get { playerLayer.player }
+            set { playerLayer.player = newValue }
+        }
+
+        init(player: AVPlayer) {
+            super.init(frame: .zero)
+            backgroundColor = .clear
+            playerLayer.player = player
+            playerLayer.videoGravity = .resizeAspect
+            playerLayer.backgroundColor = UIColor.clear.cgColor
+            layer.addSublayer(playerLayer)
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            playerLayer.frame = bounds
         }
     }
 }
