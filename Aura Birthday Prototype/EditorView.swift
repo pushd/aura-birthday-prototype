@@ -684,7 +684,7 @@ struct EditorView: View {
                                     .font(.system(size: 15, weight: .medium))
                                     .foregroundStyle(Color.primary)
                                     .frame(width: 44, height: 44)
-                                    .glassEffect(.regular.interactive())
+                                    .glassEffect(.regular)
                             }
                             .buttonStyle(.plain)
                         }
