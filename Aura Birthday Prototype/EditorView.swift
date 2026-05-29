@@ -179,12 +179,14 @@ struct EditorView: View {
     @AppStorage("protoHorizontalCards") private var horizontalCards = false
     @State private var showTutorial = true
     @State private var tutorialStep: Int = 1
-    @State private var tutorialPeekOffset: CGFloat = 0
+
 
     @State private var titleDidAppear = false
     @State private var isMuted = false
     @State private var inviteCardFrame: CGRect = .zero
     @State private var slideshowTaskID = 0
+    @State private var showInsertedPrompt = false
+    @State private var insertedPromptShown = false
     @State private var viewHeight: CGFloat = 0
     @State private var isEditMode = false
     @State private var showPrototypeMenu = false
@@ -197,25 +199,46 @@ struct EditorView: View {
 
     private let promptItems: [PromptItem] = [
         PromptItem(
-            cardTitle: "Add some\nphotos!",
-            imageName: "prompt-photo-art",
-            sheetTitle: "Add Some Photos",
-            sheetBody: "Share your favorite photos of Kayla to help make this gift extra special.",
-            ctaLabel: "Add Photos"
-        ),
-        PromptItem(
-            cardTitle: "Write a\nmessage",
-            imageName: "prompt-message-art",
-            sheetTitle: "Write a Message",
-            sheetBody: "Write a heartfelt message to Kayla that she'll treasure forever.",
-            ctaLabel: "Write Message"
-        ),
-        PromptItem(
-            cardTitle: "Sing Happy\nBirthday",
+            cardTitle: "Record a\nbirthday\nmessage",
             imageName: "prompt-sing-art",
-            sheetTitle: "Sing \"Happy Birthday!\"",
-            sheetBody: "Sing Happy Birthday to Kayla, share a special memory, or just say how much they mean to you.",
+            sheetTitle: "Record a Birthday Message",
+            sheetBody: "Share a personal video message for Kayla — it's the perfect touch for their birthday gift.",
             ctaLabel: "Start Recording"
+        ),
+        PromptItem(
+            cardTitle: "Add a\nfavorite\nphoto",
+            imageName: "prompt-photo-art",
+            sheetTitle: "Add a Favorite Photo",
+            sheetBody: "Share your favorite photos of Kayla to help make this gift extra special.",
+            ctaLabel: "Add Photo"
+        ),
+        PromptItem(
+            cardTitle: "Write a\nbirthday\nnote",
+            imageName: "prompt-message-art",
+            sheetTitle: "Write a Birthday Note",
+            sheetBody: "Write a heartfelt birthday note for Kayla that they'll treasure forever.",
+            ctaLabel: "Write Note"
+        ),
+        PromptItem(
+            cardTitle: "Sing a line\nfrom Happy\nBirthday",
+            imageName: "prompt-sing-art",
+            sheetTitle: "Sing Happy Birthday!",
+            sheetBody: "Record yourself singing a line from Happy Birthday to Kayla — a moment they'll remember forever.",
+            ctaLabel: "Start Recording"
+        ),
+        PromptItem(
+            cardTitle: "Add a\nmoment\ntogether",
+            imageName: "prompt-photo-art",
+            sheetTitle: "Add a Moment Together",
+            sheetBody: "Share a photo of a special moment you've had with Kayla.",
+            ctaLabel: "Add Photo"
+        ),
+        PromptItem(
+            cardTitle: "Share a\nmemory",
+            imageName: "prompt-message-art",
+            sheetTitle: "Share a Memory",
+            sheetBody: "Share a favorite memory with Kayla — something that made you both laugh, smile, or feel grateful.",
+            ctaLabel: "Write Memory"
         ),
     ]
 
@@ -275,11 +298,7 @@ struct EditorView: View {
                 .gesture(
                     DragGesture(minimumDistance: 20)
                         .onEnded { value in
-                            if !isVideoFullScreen && value.translation.height > 60 {
-                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                    isVideoFullScreen = true
-                                }
-                            } else if isVideoFullScreen && value.translation.height < -60 {
+                            if isVideoFullScreen && value.translation.height < -60 {
                                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
                                     isVideoFullScreen = false
                                 }
@@ -297,7 +316,7 @@ struct EditorView: View {
                         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
                 }
 
-                // Tap: launch fullscreen in default state; left/right advance when already fullscreen
+                // Tap left/right to advance slides when in fullscreen
                 Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(height: isVideoFullScreen ? geo.size.height : collapsedY)
@@ -307,10 +326,6 @@ struct EditorView: View {
                             .onEnded { value in
                                 if isVideoFullScreen {
                                     advanceSlide(by: value.location.x < geo.size.width / 2 ? -1 : 1)
-                                } else {
-                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                        isVideoFullScreen = true
-                                    }
                                 }
                             }
                     )
@@ -346,21 +361,24 @@ struct EditorView: View {
                         // Contributor + prompt cards — vertical when collapsed, horizontal when expanded
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                InviteFriendsCard(
-                                    isCompact: false,
-                                    isHorizontal: drawerExpanded,
-                                    onTap: { showInviteSheet = true }
-                                )
-                                .background(
-                                    GeometryReader { proxy in
-                                        Color.clear.preference(
-                                            key: InviteCardFrameKey.self,
-                                            value: proxy.frame(in: .global)
-                                        )
-                                    }
-                                )
-                                .id(drawerExpanded)
-                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                if false {
+                                    InviteFriendsCard(
+                                        isCompact: false,
+                                        isHorizontal: drawerExpanded,
+                                        onTap: { showInviteSheet = true }
+                                    )
+                                    .background(
+                                        GeometryReader { proxy in
+                                            Color.clear.preference(
+                                                key: InviteCardFrameKey.self,
+                                                value: proxy.frame(in: .global)
+                                            )
+                                        }
+                                    )
+                                    .id(drawerExpanded)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                    .opacity(showTutorial ? 0.35 : 1)
+                                }
 
                                 ForEach(promptItems) { item in
                                     PromptCard(
@@ -371,6 +389,7 @@ struct EditorView: View {
                                     )
                                     .id(drawerExpanded)
                                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                    .opacity(showTutorial ? (tutorialStep == 2 && item.cardTitle == "Record a\nbirthday\nmessage" ? 1 : 0.35) : 1)
                                     .onTapGesture {
                                         if item.imageName == "prompt-message-art" {
                                             editingMessageID = nil
@@ -384,8 +403,8 @@ struct EditorView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                         }
-                        .opacity(showTutorial && tutorialStep == 4 ? 0 : 1)
-                        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showTutorial && tutorialStep == 4)
+                        .opacity(showTutorial && tutorialStep == 3 ? 0 : 1)
+                        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: showTutorial && tutorialStep == 3)
                         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: drawerExpanded)
 
                         // Memories count + edit mode toggle — expanded state only
@@ -510,9 +529,9 @@ struct EditorView: View {
                     .background(.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .shadow(color: .black.opacity(0.08), radius: 16, x: 0, y: -2)
-                    .offset(y: drawerY - (showTutorial && tutorialStep == 4 ? tutorialPeekOffset : 0))
+                    .offset(y: drawerY)
                     .opacity(contentVisible ? 1 : 0)
-                    .zIndex(showTutorial && tutorialStep == 4 ? 1 : 0)
+                    .zIndex(showTutorial && tutorialStep == 3 ? 1 : 0)
                 }
 
                 // Top bar
@@ -527,9 +546,10 @@ struct EditorView: View {
                             } label: {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .padding(10)
+                                    .frame(width: 44, height: 44)
+                                    .glassEffect(.regular.interactive())
                             }
-                            .buttonStyle(.glass)
+                            .buttonStyle(.plain)
                         } else {
                             Button {
                                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -559,18 +579,20 @@ struct EditorView: View {
                                 } label: {
                                     Image(systemName: "arrow.counterclockwise")
                                         .font(.system(size: 15, weight: .medium))
-                                        .padding(10)
+                                        .frame(width: 44, height: 44)
+                                        .glassEffect(.regular.interactive())
                                 }
-                                .buttonStyle(.glass)
+                                .buttonStyle(.plain)
 
                                 Button {
                                     isMuted.toggle()
                                 } label: {
                                     Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                         .font(.system(size: 15, weight: .medium))
-                                        .padding(10)
+                                        .frame(width: 44, height: 44)
+                                        .glassEffect(.regular.interactive())
                                 }
-                                .buttonStyle(.glass)
+                                .buttonStyle(.plain)
                             }
                         } else {
                             Menu {
@@ -596,7 +618,7 @@ struct EditorView: View {
                                             isVideoFullScreen = true
                                         }
                                     } label: {
-                                        Label("Preview video", systemImage: "play.fill")
+                                        Label("Preview slideshow", systemImage: "play.fill")
                                     }
                                     Button {
                                         showSendDateEditor = true
@@ -722,7 +744,7 @@ struct EditorView: View {
                             stops: [
                                 .init(color: .black.opacity(0.72), location: 0),
                                 .init(color: .black.opacity(0.72), location: max(0, (collapsedY - 120) / geo.size.height)),
-                                .init(color: .clear, location: max(0, collapsedY / geo.size.height))
+                                .init(color: (tutorialStep == 1 || tutorialStep == 3) ? .black.opacity(0.72) : .clear, location: max(0, collapsedY / geo.size.height))
                             ],
                             startPoint: .top,
                             endPoint: .bottom
@@ -730,48 +752,18 @@ struct EditorView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea()
 
-                        if tutorialStep == 2 {
-                            VStack(spacing: 0) {
-                                Spacer().frame(height: collapsedY + 20)
-                                HStack(spacing: 0) {
-                                    InviteFriendsCard(isCompact: false, isHorizontal: false, onTap: {})
-                                        .padding(.leading, 16)
-                                    Spacer()
-                                }
-                                .padding(.vertical, 12)
-                                Spacer()
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
-                        }
-
-                        if tutorialStep == 3 {
-                            VStack(spacing: 0) {
-                                Spacer().frame(height: collapsedY + 20)
-                                HStack(spacing: 0) {
-                                    Spacer().frame(width: 133)
-                                    PromptCard(title: "Add some\nphotos!", imageName: "prompt-photo-art", isHorizontal: false)
-                                    Spacer()
-                                }
-                                .padding(.vertical, 12)
-                                Spacer()
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
-                        }
-
                         VStack(spacing: 20) {
                             Group {
                                 if tutorialStep == 1 {
-                                    Text("Welcome to Kayla's group video!")
-                                        .transition(.opacity)
+                                    VStack(spacing: 12) {
+                                        Text("Let's make a Birthday Video Gift for Kayla")
+                                        Text("We've started a birthday video gift. Add your own video, photos or message, then invite family and friends to help make it special. We'll send it for free.")
+                                            .font(.custom("TTCommonsPro-Md", size: 17, relativeTo: .callout))
+                                            .opacity(0.85)
+                                    }
+                                    .transition(.opacity)
                                 } else if tutorialStep == 2 {
-                                    Text("Invite friends and family to add their own memories to Kayla's gift.")
-                                        .transition(.opacity)
-                                } else if tutorialStep == 3 {
-                                    Text("Start by adding more photos to make Kayla's gift extra special!")
+                                    Text("Start by recording a birthday message to make Kayla's gift extra special.")
                                         .transition(.opacity)
                                 } else {
                                     Text("View the memories we've already added. Add or remove memories and drag and drop to reorder in the slideshow.")
@@ -784,19 +776,17 @@ struct EditorView: View {
                             .padding(.horizontal, 40)
 
                             Button {
-                                if tutorialStep < 4 {
+                                if tutorialStep < 2 {
                                     withAnimation(.easeInOut(duration: 0.35)) {
                                         tutorialStep += 1
                                     }
                                 } else {
                                     withAnimation(.easeOut(duration: 0.25)) {
                                         showTutorial = false
-                                        tutorialPeekOffset = 0
-
                                     }
                                 }
                             } label: {
-                                Text(tutorialStep < 4 ? "Next" : "Got it")
+                                Text(tutorialStep < 2 ? "Next" : "Got it")
                                     .font(.custom("TTCommonsPro-Db", size: 17, relativeTo: .body))
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 28)
@@ -942,13 +932,6 @@ struct EditorView: View {
                 topInset = window.safeAreaInsets.top
             }
         }
-        .onChange(of: tutorialStep) { _, step in
-            if step == 4 {
-                peekAndReveal()
-            } else {
-                tutorialPeekOffset = 0
-            }
-        }
         .onChange(of: showTutorial) { _, isShowing in
             if !isShowing {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -1052,16 +1035,6 @@ struct EditorView: View {
         slideshowTaskID += 1
     }
 
-    private func peekAndReveal() {
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) {
-            tutorialPeekOffset = 120
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.82)) {
-                tutorialPeekOffset = 0
-            }
-        }
-    }
 }
 
 // MARK: - Photo Grid Cell
@@ -1253,7 +1226,7 @@ private struct PromptCard: View {
                         .resizable()
                         .renderingMode(.original)
                         .scaledToFit()
-                        .frame(width: 105, height: 108)
+                        .frame(width: 104, height: 97)
                         .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
 
@@ -1265,8 +1238,9 @@ private struct PromptCard: View {
                     .padding(.horizontal, 8)
                     .padding(.top, isCompact ? 12 : 8)
                     .padding(.bottom, 12)
+                Spacer(minLength: 0)
             }
-            .frame(width: 105)
+            .frame(width: 115, height: 168)
             .animation(.spring(response: 0.38, dampingFraction: 0.85), value: isCompact)
             .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
