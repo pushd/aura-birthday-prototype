@@ -534,6 +534,57 @@ struct EditorView: View {
                     .zIndex(showTutorial && tutorialStep == 3 ? 1 : 0)
                 }
 
+                // Inserted prompt step — appears at slide index 3 during fullscreen preview
+                if isVideoFullScreen && showInsertedPrompt {
+                    ZStack {
+                        if let photo = slides.compactMap({ if case .photo(let p) = $0 { return p.image } else { return nil } }).first {
+                            Image(uiImage: photo)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
+                                .blur(radius: 40)
+                                .overlay(Color.black.opacity(0.5))
+                        } else {
+                            Color.black
+                        }
+
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.white.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                            .frame(width: 280, height: 498)
+                            .overlay(
+                                VStack(spacing: 16) {
+                                    Image(systemName: "plus.circle")
+                                        .font(.system(size: 32, weight: .light))
+                                        .foregroundStyle(.white)
+                                    Text("Record your birthday video message")
+                                        .font(.custom("TTCommonsPro-Db", size: 17, relativeTo: .body))
+                                        .foregroundStyle(.white)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .padding(.horizontal, 24)
+                            )
+
+                        VStack {
+                            Spacer()
+                            Button {
+                                withAnimation(.easeOut(duration: 0.3)) { showInsertedPrompt = false }
+                                slideshowTaskID += 1
+                            } label: {
+                                Text("Resume")
+                                    .font(.custom("TTCommonsPro-Db", size: 17, relativeTo: .body))
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.bottom, 68)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                }
+
                 // Top bar
                 HStack(alignment: .center) {
                     // Close/back button — always accessible regardless of drawer state
@@ -594,6 +645,8 @@ struct EditorView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                            .opacity(showInsertedPrompt ? 0.25 : 1)
+                            .animation(.easeInOut(duration: 0.2), value: showInsertedPrompt)
                         } else {
                             Menu {
                                 Section("Personalize") {
@@ -917,14 +970,24 @@ struct EditorView: View {
             if isFullScreen {
                 slideshowIndex = 0
                 slideshowTaskID += 1
+                insertedPromptShown = false
             }
         }
         .task(id: slideshowTaskID) {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2.5))
                 guard !Task.isCancelled else { break }
+                guard !showInsertedPrompt else { continue }
                 let total = slides.count + 1
                 slideshowIndex = (slideshowIndex + 1) % max(1, total)
+            }
+        }
+        .onChange(of: slideshowIndex) { _, newIndex in
+            if newIndex == 3 && !insertedPromptShown && isVideoFullScreen {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    showInsertedPrompt = true
+                    insertedPromptShown = true
+                }
             }
         }
         .onAppear {
